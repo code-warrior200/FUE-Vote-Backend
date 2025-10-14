@@ -8,6 +8,8 @@ const router = express.Router();
 
 router.delete("/admin/reset-all", protect, adminOnly, resetAllVotes);
 
+router.post("/reset", protect, adminOnly, resetVotes);
+
 // GET vote summary (admin only)
 router.get("/vote-summary", /*verifyAdmin,*/ getVoteSummary);
 

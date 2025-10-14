@@ -5,20 +5,16 @@ import {
   resetVotesByCategory,
   resetMyVotes,
 } from "../controllers/voteController.js";
-import { protect } from "../middleware/authMiddleware.js";
+import { protect, adminOnly, voterOnly } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// Cast vote (voter only)
-router.post("/", protect, castVote);
+// 🗳️ Voters
+router.post("/", protect, voterOnly, castVote);
+router.delete("/reset", protect, voterOnly, resetMyVotes);
 
-// Reset own votes (voter)
-router.delete("/reset", protect, resetMyVotes);
-
-// Reset all votes (admin)
-router.delete("/admin/reset-all", protect, resetAllVotes);
-
-// Reset votes by category (admin)
-router.delete("/admin/reset-category/:categoryId", protect, resetVotesByCategory);
+// 🧹 Admins
+router.delete("/admin/reset-all", protect, adminOnly, resetAllVotes);
+router.delete("/admin/reset-category/:categoryId", protect, adminOnly, resetVotesByCategory);
 
 export default router;
