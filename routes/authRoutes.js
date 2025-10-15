@@ -4,8 +4,8 @@ import cors from "cors";
 
 const router = express.Router();
 
-// ✅ Temporary in-memory admin (without regnumber/studentId)
-const user = { id: 1, username: "admin", password: "admin123" };
+// ✅ Temporary in-memory voter for example
+const voter = { id: 1, regnumber: "EZ/CSC2314/2025" };
 
 // ✅ Allow frontend access (CORS)
 router.use(
@@ -22,30 +22,29 @@ router.use(express.json());
 /**
  * @swagger
  * tags:
- *   name: Auth
- *   description: Authentication and user login
+ *   name: VoterAuth
+ *   description: Authentication routes for voters
  */
 
 /**
  * @swagger
- * /auth/login:
+ * /auth/voter-login:
  *   post:
- *     summary: Admin login
- *     description: Authenticates an admin user and returns a JWT token.
- *     tags: [Auth]
+ *     summary: Voter login using registration number
+ *     description: Allows a registered voter to log in using only their registration number and receive a JWT token.
+ *     tags: [VoterAuth]
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - regnumber
  *             properties:
- *               username:
+ *               regnumber:
  *                 type: string
- *                 example: "admin"
- *               password:
- *                 type: string
- *                 example: "admin123"
+ *                 example: "EZ/CSC2314/2025"
  *     responses:
  *       200:
  *         description: Login successful, JWT returned.
@@ -60,31 +59,30 @@ router.use(express.json());
  *                 token:
  *                   type: string
  *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
- *                 user:
+ *                 voter:
  *                   type: object
  *                   properties:
  *                     id:
  *                       type: integer
  *                       example: 1
- *                     username:
+ *                     regnumber:
  *                       type: string
- *                       example: admin
+ *                       example: EZ/CSC2314/2025
  *       401:
- *         description: Invalid credentials.
+ *         description: Invalid registration number.
  *       500:
  *         description: Internal server error.
  */
-router.post("/login", (req, res) => {
-  const { username, password } = req.body;
+router.post("/voter-login", (req, res) => {
+  const { regnumber } = req.body;
 
-  const isValid = username === user.username && password === user.password;
-
-  if (!isValid) {
-    return res.status(401).json({ message: "Invalid credentials" });
+  if (!regnumber || regnumber !== voter.regnumber) {
+    return res.status(401).json({ message: "Invalid registration number" });
   }
 
+  // ✅ Generate JWT token for voter
   const token = jwt.sign(
-    { id: user.id, username: user.username },
+    { id: voter.id, regnumber: voter.regnumber },
     process.env.JWT_SECRET || "fallback_secret_key",
     { expiresIn: "1h" }
   );
@@ -92,17 +90,17 @@ router.post("/login", (req, res) => {
   return res.json({
     message: "Login successful",
     token,
-    user: { id: user.id, username: user.username },
+    voter: { id: voter.id, regnumber: voter.regnumber },
   });
 });
 
 /**
  * @swagger
- * /auth/dashboard:
+ * /auth/voter-dashboard:
  *   get:
- *     summary: Get dashboard stats (protected route)
- *     description: Returns dashboard data for the authenticated admin. Requires a valid JWT in the `Authorization` header.
- *     tags: [Auth]
+ *     summary: Get voter dashboard (protected route)
+ *     description: Returns basic voter information. Requires a valid JWT in the `Authorization` header.
+ *     tags: [VoterAuth]
  *     security:
  *       - bearerAuth: []
  *     responses:
@@ -113,21 +111,21 @@ router.post("/login", (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 users:
- *                   type: integer
- *                   example: 100
- *                 votes:
- *                   type: integer
- *                   example: 250
- *                 admin:
+ *                 message:
  *                   type: string
- *                   example: admin
+ *                   example: Welcome to your dashboard
+ *                 voter:
+ *                   type: object
+ *                   properties:
+ *                     regnumber:
+ *                       type: string
+ *                       example: EZ/CSC2314/2025
  *       401:
  *         description: Unauthorized - missing or invalid token.
  *       500:
  *         description: Internal server error.
  */
-router.get("/dashboard", (req, res) => {
+router.get("/voter-dashboard", (req, res) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -141,7 +139,10 @@ router.get("/dashboard", (req, res) => {
       token,
       process.env.JWT_SECRET || "fallback_secret_key"
     );
-    return res.json({ users: 100, votes: 250, admin: decoded.username });
+    return res.json({
+      message: "Welcome to your dashboard",
+      voter: { regnumber: decoded.regnumber },
+    });
   } catch (error) {
     return res.status(401).json({ message: "Invalid or expired token" });
   }
