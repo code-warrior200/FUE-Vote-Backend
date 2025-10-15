@@ -9,6 +9,20 @@ import { protect, adminOnly, voterOnly } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * /api/vote:
+ *   post:
+ *     tags: [Votes]
+ *     summary: Submit a vote
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Vote successfully recorded
+ */
+
+
 // 🗳️ Voters
 router.post("/", protect, voterOnly, castVote);
 router.delete("/reset", protect, voterOnly, resetMyVotes);
