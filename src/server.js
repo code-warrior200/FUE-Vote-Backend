@@ -20,12 +20,19 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ✅ Swagger setup
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+// ✅ Swagger setup (works locally & on Render)
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  explorer: true, // enables "Explore" button in Swagger UI
+}));
 
+// ✅ API Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/categories", categoryRoutes);
+app.use("/api/candidates", candidateRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/vote", voteRoutes);
 
-// Create HTTP server & Socket.IO
+// ✅ Create HTTP server & Socket.IO setup
 const server = http.createServer(app);
 export const io = new Server(server, {
   cors: {
@@ -35,20 +42,15 @@ export const io = new Server(server, {
 });
 
 io.on("connection", (socket) => {
-  console.log("Admin/Client connected:", socket.id);
+  console.log("🔌 Client connected:", socket.id);
   socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
+    console.log("❌ Client disconnected:", socket.id);
   });
 });
 
-// API Routes
-app.use("/api/categories", categoryRoutes);
-app.use("/api/candidates", candidateRoutes);
-app.use("/api/admin", adminRoutes);
-app.use("/api/vote", voteRoutes);
-app.use("/api/auth", authRoutes);
-
+// ✅ Dynamic PORT for Render deployment
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () =>
-  console.log(`✅ Server running on port ${PORT}\n📘 Swagger Docs: http://localhost:/api-docs`)
-);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`📘 Swagger Docs available at: http://localhost:${PORT}/api-docs`);
+});

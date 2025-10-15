@@ -15,8 +15,8 @@ const options = {
     },
     servers: [
       {
-        url: "http://localhost:5000",
-        description: "Local server",
+        url: "/", // ✅ relative URL so it works both locally and on Render
+        description: "Current server",
       },
     ],
     tags: [
@@ -47,7 +47,7 @@ const options = {
       },
     },
   },
-  apis: ["./routes/*.js"],
+  apis: ["./routes/*.js"], // adjust path if needed
 };
 
 export const swaggerSpec = swaggerJSDoc(options);
