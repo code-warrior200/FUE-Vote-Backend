@@ -32,7 +32,6 @@ export const loginUser = async (req, res) => {
     if (!user) {
       user = await User.create({
         regnumber: upperReg,
-        email: `${upperReg.replace(/\//g, "_")}@auto.${role}`,
         password: role === "admin" ? "admin123" : upperReg,
         role,
         department,

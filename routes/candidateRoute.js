@@ -2,17 +2,48 @@ import express from "express";
 import { getAllCandidates } from "../controllers/candidateController.js";
 
 const router = express.Router();
-router.get("/", getAllCandidates);
 
 /**
  * @swagger
- * /api/candidates:
+ * tags:
+ *   name: Candidates
+ *   description: Candidate management and retrieval
+ */
+
+/**
+ * @swagger
+ * /candidates:
  *   get:
- *      tags: [Candidates]
- *     summary: Get all candidates grouped by category
+ *     summary: Get all candidates
+ *     description: Retrieve a list of all candidates available in the system.
+ *     tags: [Candidates]
  *     responses:
  *       200:
- *         description: List of candidates grouped by category
+ *         description: Successfully retrieved the list of candidates.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: integer
+ *                     example: 1
+ *                   name:
+ *                     type: string
+ *                     example: "John Doe"
+ *                   position:
+ *                     type: string
+ *                     example: "President"
+ *                   votes:
+ *                     type: integer
+ *                     example: 120
+ *       404:
+ *         description: No candidates found.
+ *       500:
+ *         description: Internal server error.
  */
+router.get("/", getAllCandidates);
 
 export default router;

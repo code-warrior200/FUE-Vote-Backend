@@ -21,15 +21,68 @@ router.use(express.json());
 
 /**
  * @swagger
- * /api/auth/login:
+ * tags:
+ *   name: Auth
+ *   description: Authentication and user login
+ */
+
+/**
+ * @swagger
+ * /auth/login:
  *   post:
- *     summary: Login a user
- *     description: Authenticate the user and return a JWT token.
+ *     summary: User login (username/password or studentId)
+ *     description: Logs in a user using either username/password or student ID and returns a JWT token.
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 example: "admin"
+ *               password:
+ *                 type: string
+ *                 example: "admin123"
+ *               studentId:
+ *                 type: string
+ *                 example: "12345"
+ *     responses:
+ *       200:
+ *         description: Login successful, JWT returned.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Login successful
+ *                 token:
+ *                   type: string
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                       example: 1
+ *                     username:
+ *                       type: string
+ *                       example: admin
+ *                     studentId:
+ *                       type: string
+ *                       example: 12345
+ *       401:
+ *         description: Invalid credentials.
+ *       500:
+ *         description: Internal server error.
  */
 router.post("/login", (req, res) => {
   const { username, password, studentId } = req.body;
 
-  // 🔸 Support both username/password and studentId-based login
   const isValidByUsername =
     username === user.username && password === user.password;
 
@@ -39,7 +92,6 @@ router.post("/login", (req, res) => {
     return res.status(401).json({ message: "Invalid credentials" });
   }
 
-  // ✅ Sign JWT using secret from environment or fallback
   const token = jwt.sign(
     { id: user.id, username: user.username },
     process.env.JWT_SECRET || "fallback_secret_key",
@@ -55,11 +107,34 @@ router.post("/login", (req, res) => {
 
 /**
  * @swagger
- * /api/auth/dashboard:
+ * /auth/dashboard:
  *   get:
- *     summary: Protected dashboard route
+ *     summary: Get dashboard stats (protected route)
+ *     description: Returns basic dashboard information. Requires a valid JWT in the `Authorization` header.
+ *     tags: [Auth]
  *     security:
  *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Dashboard data retrieved successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 users:
+ *                   type: integer
+ *                   example: 100
+ *                 votes:
+ *                   type: integer
+ *                   example: 250
+ *                 admin:
+ *                   type: string
+ *                   example: admin
+ *       401:
+ *         description: Unauthorized - Missing or invalid token.
+ *       500:
+ *         description: Internal server error.
  */
 router.get("/dashboard", (req, res) => {
   const authHeader = req.headers.authorization;
@@ -71,7 +146,10 @@ router.get("/dashboard", (req, res) => {
   const token = authHeader.split(" ")[1];
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || "fallback_secret_key");
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "fallback_secret_key"
+    );
     console.log("✅ Authenticated user:", decoded);
     return res.json({ users: 100, votes: 250, admin: decoded.username });
   } catch (error) {
@@ -81,3 +159,4 @@ router.get("/dashboard", (req, res) => {
 });
 
 export default router;
+
