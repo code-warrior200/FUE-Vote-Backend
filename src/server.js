@@ -40,7 +40,7 @@ export const io = new Server(server, {
     origin: "*",
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true,
+  credentials: false,
   },
 });
 
