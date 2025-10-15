@@ -4,13 +4,13 @@ import cors from "cors";
 
 const router = express.Router();
 
-// ✅ Temporary in-memory user for example
-const user = { id: 1, username: "admin", password: "admin123", studentId: "12345" };
+// ✅ Temporary in-memory user (for demonstration)
+const user = { id: 1, username: "admin", password: "admin123", regnumber: "12345" };
 
-// ✅ Allow frontend access (important fix for strict-origin-when-cross-origin)
+// ✅ Allow frontend access (important for CORS)
 router.use(
   cors({
-    origin: "*", // You can restrict this to your frontend domain later
+    origin: "*", // 🔒 Replace with your frontend domain in production
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
@@ -23,15 +23,15 @@ router.use(express.json());
  * @swagger
  * tags:
  *   name: Auth
- *   description: Authentication and user login
+ *   description: Authentication endpoints for login and accessing protected data
  */
 
 /**
  * @swagger
  * /auth/login:
  *   post:
- *     summary: User login (username/password or studentId)
- *     description: Logs in a user using either username/password or student ID and returns a JWT token.
+ *     summary: User login (by username/password or student ID)
+ *     description: Authenticates a user and returns a signed JWT token if credentials are valid.
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -46,12 +46,12 @@ router.use(express.json());
  *               password:
  *                 type: string
  *                 example: "admin123"
- *               studentId:
+ *               regnumber:
  *                 type: string
  *                 example: "12345"
  *     responses:
  *       200:
- *         description: Login successful, JWT returned.
+ *         description: Login successful — JWT and user info returned.
  *         content:
  *           application/json:
  *             schema:
@@ -72,7 +72,7 @@ router.use(express.json());
  *                     username:
  *                       type: string
  *                       example: admin
- *                     studentId:
+ *                     regnumber:
  *                       type: string
  *                       example: 12345
  *       401:
@@ -81,17 +81,17 @@ router.use(express.json());
  *         description: Internal server error.
  */
 router.post("/login", (req, res) => {
-  const { username, password, studentId } = req.body;
+  const { username, password, regnumber } = req.body;
 
-  const isValidByUsername =
-    username === user.username && password === user.password;
-
-  const isValidByStudentId = studentId && studentId === user.studentId;
+  // Support both username/password and regnumber-based login
+  const isValidByUsername = username === user.username && password === user.password;
+  const isValidByStudentId = regnumber && regnumber === user.regnumber;
 
   if (!isValidByUsername && !isValidByStudentId) {
     return res.status(401).json({ message: "Invalid credentials" });
   }
 
+  // Generate JWT
   const token = jwt.sign(
     { id: user.id, username: user.username },
     process.env.JWT_SECRET || "fallback_secret_key",
@@ -101,7 +101,7 @@ router.post("/login", (req, res) => {
   return res.json({
     message: "Login successful",
     token,
-    user: { id: user.id, username: user.username, studentId: user.studentId },
+    user: { id: user.id, username: user.username, regnumber: user.regnumber },
   });
 });
 
@@ -110,7 +110,7 @@ router.post("/login", (req, res) => {
  * /auth/dashboard:
  *   get:
  *     summary: Get dashboard stats (protected route)
- *     description: Returns basic dashboard information. Requires a valid JWT in the `Authorization` header.
+ *     description: Returns dashboard data for authenticated users. Requires a valid JWT in the `Authorization` header.
  *     tags: [Auth]
  *     security:
  *       - bearerAuth: []
@@ -132,7 +132,7 @@ router.post("/login", (req, res) => {
  *                   type: string
  *                   example: admin
  *       401:
- *         description: Unauthorized - Missing or invalid token.
+ *         description: Unauthorized — missing or invalid token.
  *       500:
  *         description: Internal server error.
  */
@@ -159,4 +159,3 @@ router.get("/dashboard", (req, res) => {
 });
 
 export default router;
-
