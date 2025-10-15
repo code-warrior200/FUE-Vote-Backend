@@ -34,6 +34,7 @@ app.use("/api/vote", voteRoutes);
 
 // ✅ Create HTTP server & Socket.IO setup
 const server = http.createServer(app);
+
 export const io = new Server(server, {
   cors: {
     origin: "*",
