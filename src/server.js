@@ -35,6 +35,15 @@ app.use("/api/vote", voteRoutes);
 // ✅ Create HTTP server & Socket.IO setup
 const server = http.createServer(app);
 
+// ✅ Allow Expo + Web + Render connections
+const allowedOrigins = [
+  "http://localhost:8081",        // Expo Go local dev
+  "http://localhost:19006",       // Expo web preview
+  "exp://127.0.0.1:19000",        // Expo LAN URL
+  "https://fue-vote-frontend.onrender.com", // your deployed frontend (if any)
+  "https://fue-vote-backend-1.onrender.com" // Render backend itself
+];
+
 export const io = new Server(server, {
   cors: {
     origin: "*",
