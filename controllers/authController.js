@@ -5,7 +5,7 @@ const generateToken = (id, role) => {
   return jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: "7d" });
 };
 
-// 🧾 Login (admin password required, voter auto-login)
+// 🧾 Login (admin requires password, voters auto-login)
 export const loginUser = async (req, res) => {
   try {
     const { regnumber, password } = req.body;
@@ -22,6 +22,7 @@ export const loginUser = async (req, res) => {
     let role = "voter";
     let department = null;
 
+    // Determine role
     if (upperReg.includes("ADMIN")) {
       role = "admin";
     } else {
@@ -31,18 +32,21 @@ export const loginUser = async (req, res) => {
       }
     }
 
+    // ✅ Check if user exists
     let user = await User.findOne({ regnumber });
 
+    // ✅ Create user if not exists (auto-login voters)
     if (!user) {
       user = await User.create({
         regnumber,
         email: `${upperReg.replace(/\//g, "_")}@auto.${role}`,
-        password: role === "admin" ? "admin123" : regnumber,
+        password: role === "admin" ? "admin123" : regnumber, // voters auto-login
         role,
         department,
       });
     }
 
+    // ✅ Admin password check
     if (role === "admin") {
       if (!password) {
         return res.status(400).json({ message: "Admin password is required" });
@@ -54,7 +58,7 @@ export const loginUser = async (req, res) => {
       }
     }
 
-    // ✅ Generate and save unique session token
+    // ✅ Generate JWT token
     const token = generateToken(user._id, user.role);
     user.activeToken = token;
     await user.save();
