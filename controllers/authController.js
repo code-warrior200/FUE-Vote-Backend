@@ -23,7 +23,7 @@ export const loginUser = async (req, res) => {
     let role = upperReg.includes("ADMIN") ? "admin" : "voter";
     let department = null;
     const match = upperReg.match(/^EZ\/([A-Z]+)/);
-    if (match && !upperReg.includes("ADMIN")) department = match[1];
+    if (match && !username.includes("ADMIN")) department = match[1];
 
     // find user
     let user = await User.findOne({ regnumber: upperReg });
@@ -31,8 +31,8 @@ export const loginUser = async (req, res) => {
     // auto-create if missing
     if (!user) {
       user = await User.create({
-        regnumber: upperReg,
-        password: role === "admin" ? "admin123" : upperReg,
+        username: username,
+        password: role === "admin" ? "admin123" : username, // default password
         role,
         department,
       });
@@ -57,7 +57,7 @@ export const loginUser = async (req, res) => {
     res.status(200).json({
       _id: user._id,
       regnumber: user.regnumber,
-      email: user.email,
+      username: user.username,
       role: user.role,
       department: user.department,
       token,
