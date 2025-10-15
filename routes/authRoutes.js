@@ -4,13 +4,13 @@ import cors from "cors";
 
 const router = express.Router();
 
-// ✅ Temporary in-memory user (for demonstration)
-const user = { id: 1, username: "admin", password: "admin123", regnumber: "12345" };
+// ✅ Temporary in-memory admin (without regnumber/studentId)
+const user = { id: 1, username: "admin", password: "admin123" };
 
-// ✅ Allow frontend access (important for CORS)
+// ✅ Allow frontend access (CORS)
 router.use(
   cors({
-    origin: "*", // 🔒 Replace with your frontend domain in production
+    origin: "*",
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
@@ -23,15 +23,15 @@ router.use(express.json());
  * @swagger
  * tags:
  *   name: Auth
- *   description: Authentication endpoints for login and accessing protected data
+ *   description: Authentication and user login
  */
 
 /**
  * @swagger
  * /auth/login:
  *   post:
- *     summary: User login (by username/password or student ID)
- *     description: Authenticates a user and returns a signed JWT token if credentials are valid.
+ *     summary: Admin login
+ *     description: Authenticates an admin user and returns a JWT token.
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -46,12 +46,9 @@ router.use(express.json());
  *               password:
  *                 type: string
  *                 example: "admin123"
- *               regnumber:
- *                 type: string
- *                 example: "12345"
  *     responses:
  *       200:
- *         description: Login successful — JWT and user info returned.
+ *         description: Login successful, JWT returned.
  *         content:
  *           application/json:
  *             schema:
@@ -72,26 +69,20 @@ router.use(express.json());
  *                     username:
  *                       type: string
  *                       example: admin
- *                     regnumber:
- *                       type: string
- *                       example: 12345
  *       401:
  *         description: Invalid credentials.
  *       500:
  *         description: Internal server error.
  */
 router.post("/login", (req, res) => {
-  const { username, password, regnumber } = req.body;
+  const { username, password } = req.body;
 
-  // Support both username/password and regnumber-based login
-  const isValidByUsername = username === user.username && password === user.password;
-  const isValidByStudentId = regnumber && regnumber === user.regnumber;
+  const isValid = username === user.username && password === user.password;
 
-  if (!isValidByUsername && !isValidByStudentId) {
+  if (!isValid) {
     return res.status(401).json({ message: "Invalid credentials" });
   }
 
-  // Generate JWT
   const token = jwt.sign(
     { id: user.id, username: user.username },
     process.env.JWT_SECRET || "fallback_secret_key",
@@ -101,7 +92,7 @@ router.post("/login", (req, res) => {
   return res.json({
     message: "Login successful",
     token,
-    user: { id: user.id, username: user.username, regnumber: user.regnumber },
+    user: { id: user.id, username: user.username },
   });
 });
 
@@ -110,7 +101,7 @@ router.post("/login", (req, res) => {
  * /auth/dashboard:
  *   get:
  *     summary: Get dashboard stats (protected route)
- *     description: Returns dashboard data for authenticated users. Requires a valid JWT in the `Authorization` header.
+ *     description: Returns dashboard data for the authenticated admin. Requires a valid JWT in the `Authorization` header.
  *     tags: [Auth]
  *     security:
  *       - bearerAuth: []
@@ -132,7 +123,7 @@ router.post("/login", (req, res) => {
  *                   type: string
  *                   example: admin
  *       401:
- *         description: Unauthorized — missing or invalid token.
+ *         description: Unauthorized - missing or invalid token.
  *       500:
  *         description: Internal server error.
  */
@@ -150,10 +141,8 @@ router.get("/dashboard", (req, res) => {
       token,
       process.env.JWT_SECRET || "fallback_secret_key"
     );
-    console.log("✅ Authenticated user:", decoded);
     return res.json({ users: 100, votes: 250, admin: decoded.username });
   } catch (error) {
-    console.error("JWT error:", error.message);
     return res.status(401).json({ message: "Invalid or expired token" });
   }
 });
