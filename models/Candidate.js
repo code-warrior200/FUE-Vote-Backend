@@ -4,19 +4,24 @@ const candidateSchema = new mongoose.Schema({
   name: {
     type: String,
     required: true,
-    trim: true,
   },
-  department: {
+  party: {
     type: String,
     required: true,
-    uppercase: true,
-    trim: true,
   },
-  categoryId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Category",
+  position: {
+    type: String,
     required: true,
+  },
+  image: {
+    type: String, // optional (e.g., URL or filename)
+    default: "",
+  },
+  votes: {
+    type: Number,
+    default: 0,
   },
 }, { timestamps: true });
 
-export default mongoose.model("Candidate", candidateSchema);
+const Candidate = mongoose.model("Candidate", candidateSchema);
+export default Candidate;
