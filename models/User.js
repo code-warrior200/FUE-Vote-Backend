@@ -21,9 +21,6 @@ const userSchema = new mongoose.Schema({
     enum: ["admin", "voter"],
     default: "voter",
   },
-  department: {
-    type: String,
-  },
   activeToken: {
     type: String, // store currently active login token
     default: null,

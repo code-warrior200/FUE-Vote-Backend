@@ -42,3 +42,30 @@ export const getVoteSummary = async (req, res) => {
     res.status(500).json({ message: "Failed to get vote summary", error: error.message });
   }
 };
+
+export const addCandidate = async (req, res) => {
+  try {
+    const { name, party, position } = req.body;
+    const image = req.file ? `/uploads/${req.file.filename}` : "";
+
+    if (!name || !party || !position) {
+      return res.status(400).json({ message: "All required fields must be provided." });
+    }
+
+    const existing = await Candidate.findOne({ name, position });
+    if (existing) {
+      return res.status(400).json({ message: "Candidate already exists for this position." });
+    }
+
+    const candidate = await Candidate.create({
+      name,
+      department,
+      position,
+      image,
+    });
+
+    res.status(201).json({ message: "Candidate added successfully", candidate });
+  } catch (error) {
+    res.status(500).json({ message: "Server error while adding candidate" });
+  }
+};

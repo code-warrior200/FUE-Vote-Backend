@@ -2,6 +2,7 @@ import express from "express";
 import { getVoteSummary, addCandidate } from "../controllers/adminController.js";
 import { resetAllVotes, resetVotes } from "../controllers/voteController.js";
 import { protect, adminOnly } from "../middleware/authMiddleware.js";
+import { upload } from "../middleware/uploadMiddleware.js";
 
 const router = express.Router();
 
@@ -24,9 +25,9 @@ const router = express.Router();
  *               name:
  *                 type: string
  *                 example: "John Doe"
- *               party:
+ *               department:
  *                 type: string
- *                 example: "Democratic Party"
+ *                 example: "Computer Science"
  *               position:
  *                 type: string
  *                 example: "President"
@@ -46,6 +47,14 @@ const router = express.Router();
  *         description: Server error.
  */
 router.post("/add-candidate", protect, adminOnly, addCandidate);
+
+router.post(
+  "/add-candidate",
+  protect,
+  adminOnly,
+  upload.single("image"), // ✅ handles file upload
+  addCandidate
+);
 
 // existing routes
 router.delete("/admin/reset-all", protect, adminOnly, resetAllVotes);
