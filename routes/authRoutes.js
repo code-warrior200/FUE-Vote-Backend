@@ -125,7 +125,7 @@ router.post("/voter-login", (req, res) => {
  *       500:
  *         description: Internal server error.
  */
-router.get("/voter-dashboard", (req, res) => {
+router.get("/home", (req, res) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
