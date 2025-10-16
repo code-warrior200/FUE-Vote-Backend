@@ -6,4 +6,4 @@ const categorySchema = new mongoose.Schema({
   endDate: Date,
 });
 
-export default mongoose.model("Category", categorySchema);
+export default mongoose.model("position", categorySchema);

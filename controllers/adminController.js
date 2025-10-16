@@ -42,3 +42,49 @@ export const getVoteSummary = async (req, res) => {
     res.status(500).json({ message: "Failed to get vote summary", error: error.message });
   }
 };
+
+/**
+ * @desc    Add a new candidate
+ * @route   POST /api/admin/add-candidate
+ * @access  Admin only
+ */
+export const addCandidate = async (req, res) => {
+  try {
+    const { name, department, categoryId, image } = req.body;
+
+    // Validation
+    if (!name || !department || !categoryId) {
+      return res.status(400).json({ message: "Please provide name, department, and categoryId." });
+    }
+
+    // Ensure category exists
+    const category = await Category.findById(categoryId);
+    if (!category) {
+      return res.status(404).json({ message: "Category not found." });
+    }
+
+    // Check if candidate already exists in this category
+    const existingCandidate = await Candidate.findOne({ name, categoryId });
+    if (existingCandidate) {
+      return res.status(400).json({ message: "Candidate already exists in this category." });
+    }
+
+    // Create new candidate
+    const newCandidate = new Candidate({
+      name,
+      department,
+      categoryId,
+      image: image || null, // Optional
+    });
+
+    await newCandidate.save();
+
+    res.status(201).json({
+      message: "Candidate added successfully.",
+      candidate: newCandidate,
+    });
+  } catch (error) {
+    console.error("Error adding candidate:", error);
+    res.status(500).json({ message: "Failed to add candidate", error: error.message });
+  }
+};

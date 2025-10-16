@@ -1,9 +1,9 @@
 import Category from "../models/Category.js";
 
-export const getCategories = async (req, res) => {
+export const getCategory = async (req, res) => {
   try {
-    const categories = await Category.find();
-    res.json(categories);
+    const category = await category.find();
+    res.json(category);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
