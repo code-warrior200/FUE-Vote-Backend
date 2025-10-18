@@ -42,7 +42,7 @@ export const getVoteSummary = async (req, res) => {
     console.error("Error fetching vote summary:", error);
     return res.status(500).json({
       message: "Failed to get vote summary",
-      error: error.message,
+      error: error.message || "Unknown server error",
     });
   }
 };
@@ -54,6 +54,11 @@ export const getVoteSummary = async (req, res) => {
  */
 export const addCandidate = async (req, res) => {
   try {
+    // Ensure req.body exists
+    if (!req.body) {
+      return res.status(400).json({ message: "Request body is missing." });
+    }
+
     const { name, party, position, department } = req.body;
     const image = req.file ? `/uploads/${req.file.filename}` : "";
 
@@ -85,9 +90,16 @@ export const addCandidate = async (req, res) => {
     });
   } catch (error) {
     console.error("Error adding candidate:", error);
+
+    // Handle Mongoose validation errors explicitly
+    if (error.name === "ValidationError") {
+      const messages = Object.values(error.errors).map((val) => val.message);
+      return res.status(400).json({ message: "Validation error", errors: messages });
+    }
+
     return res.status(500).json({
       message: "Server error while adding candidate",
-      error: error.message,
+      error: error.message || "Unknown server error",
     });
   }
 };
