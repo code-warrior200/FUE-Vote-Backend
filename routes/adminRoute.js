@@ -40,7 +40,7 @@ router.post("/admin/add-candidate", protect, adminOnly, async (req, res) => {
  * GET /api/admin/candidates
  * Return all candidates
  */
-router.get("/admin/candidates", protect, adminOnly, async (req, res) => {
+router.get("/admin/candidates", getCandidates,async (req, res) => {
   try {
     const candidates = await getCandidates(req, res);
     if (!res.headersSent) {
