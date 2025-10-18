@@ -10,6 +10,7 @@ import { swaggerUi, swaggerSpec } from "../config/swaggar.js";
 import categoryRoutes from "../routes/categoryRoutes.js";
 import candidateRoutes from "../routes/candidateRoute.js";
 import adminRoutes from "../routes/adminRoutes.js";
+import adminRoute from "../routes/adminRoute.js";
 import voteRoutes from "../routes/voteRoute.js";
 import authRoutes from "../routes/authRoutes.js";
 
@@ -35,6 +36,7 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, { explorer: t
 app.use("/api/auth", authRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/candidates", candidateRoutes);
+app.use("/api/admin", adminRoute);
 app.use("/api/admin", adminRoutes);
 app.use("/api/vote", voteRoutes);
 

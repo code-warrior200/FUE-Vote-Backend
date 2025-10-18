@@ -47,7 +47,7 @@ const router = express.Router();
  *         description: Server error.
  */
 
-router.post("/add-candidate",upload.single("image"), addCandidate), async (req, res, next) => {
+router.post("/add-candidate",protect, adminOnly, addCandidate), async (req, res, next) => {
   try {
     // ✅ Delegate to your controller and ensure JSON-only responses
     const result = await addCandidate(req, res);
@@ -67,7 +67,6 @@ router.post("/add-candidate",upload.single("image"), addCandidate), async (req, 
 }
 
 // === Other Admin Routes ===
-router.post("/add-candidate", protect, adminOnly, addCandidate);
 router.delete("/admin/reset-all", protect, adminOnly, resetAllVotes);
 router.post("/reset", protect, adminOnly, resetVotes);
 router.get("/vote-summary", protect, adminOnly, getVoteSummary);

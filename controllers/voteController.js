@@ -57,6 +57,32 @@ export const resetAllVotes = async (req, res) => {
   }
 };
 
+// 🧾 RESET VOTES FOR A SPECIFIC CANDIDATE (ADMIN ONLY)
+export const resetVotes = async (req, res) => {
+  try {
+    if (req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ message: "Access denied. Admins only." });
+    }
+
+    const { candidateId } = req.body;
+
+    if (!candidateId) {
+      return res.status(400).json({ message: "Candidate ID is required." });
+    }
+
+    const deleted = await Vote.deleteMany({ candidateId });
+
+    res.status(200).json({
+      message: `Votes for candidate ${candidateId} have been reset.`,
+      deletedCount: deleted.deletedCount,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // 🧾 RESET VOTES BY CATEGORY (ADMIN ONLY)
 export const resetVotesByCategory = async (req, res) => {
   try {
