@@ -46,6 +46,9 @@ const router = express.Router();
  *       500:
  *         description: Server error.
  */
+
+router.post("/add-candidate", protect, adminOnly, upload.single("image"), addCandidate);
+
 router.post("/add-candidate", protect, adminOnly, async (req, res, next) => {
   try {
     // ✅ Delegate to your controller and ensure JSON-only responses
