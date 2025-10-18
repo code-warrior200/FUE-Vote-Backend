@@ -3,7 +3,11 @@ import Candidate from "../models/Candidate.js";
 import Vote from "../models/Vote.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
-// GET /api/admin/vote-summary
+/**
+ * @desc    Get vote summary for all categories
+ * @route   GET /api/admin/vote-summary
+ * @access  Admin
+ */
 export const getVoteSummary = asyncHandler(async (req, res) => {
   const categories = await Category.find();
 
@@ -27,31 +31,62 @@ export const getVoteSummary = asyncHandler(async (req, res) => {
   );
 
   res.status(200).json({
+    success: true,
     totalCategories: categories.length,
     summary,
   });
 });
 
-// POST /api/admin/add-candidate
+/**
+ * @desc    Add a new candidate
+ * @route   POST /api/admin/add-candidate
+ * @access  Admin
+ */
 export const addCandidate = asyncHandler(async (req, res) => {
-  if (!req.body) {
-    return res.status(400).json({ message: "Request body is missing." });
-  }
-
-  const { name, party, position, department } = req.body;
+  const { name, position, department, categoryId } = req.body;
   const image = req.file ? `/uploads/${req.file.filename}` : "";
 
-  if (!name || !party || !position || !department) {
+  // ✅ Validate input
+  if (!name || !position || !department) {
     return res.status(400).json({
-      message: "All required fields (name, party, position, department) must be provided.",
+      success: false,
+      message:
+        "All required fields (name, party, position, department) must be provided.",
     });
   }
 
-  const existing = await Candidate.findOne({ name, position });
-  if (existing) {
-    return res.status(400).json({ message: "Candidate already exists for this position." });
+  // ✅ Optional: ensure category exists if categoryId provided
+  if (categoryId) {
+    const categoryExists = await Category.findById(categoryId);
+    if (!categoryExists) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Category not found." });
+    }
   }
 
-  const candidate = await Candidate.create({ name, party, position, department, image });
-  res.status(201).json({ message: "Candidate added successfully", candidate });
+  // ✅ Prevent duplicate candidate for same position
+  const existing = await Candidate.findOne({ name, position });
+  if (existing) {
+    return res.status(400).json({
+      success: false,
+      message: "Candidate already exists for this position.",
+    });
+  }
+
+  // ✅ Create candidate
+  const candidate = await Candidate.create({
+    name,
+    position,
+    department,
+    categoryId,
+    image,
+  });
+
+  // ✅ Send success response
+  res.status(201).json({
+    success: true,
+    message: "Candidate added successfully",
+    candidate,
+  });
 });
