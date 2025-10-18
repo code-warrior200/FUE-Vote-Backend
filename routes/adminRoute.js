@@ -2,7 +2,7 @@ import express from "express";
 import { getVoteSummary, addCandidate } from "../controllers/adminController.js";
 import { resetAllVotes, resetVotes } from "../controllers/voteController.js";
 import { protect, adminOnly } from "../middleware/authMiddleware.js";
-import { upload } from "../middleware/uploadMiddleware.js";
+// import { upload } from "../middleware/uploadMiddleware.js"; // ❌ Not needed for Cloudinary JSON uploads
 
 const router = express.Router();
 
@@ -46,17 +46,26 @@ const router = express.Router();
  *       500:
  *         description: Server error.
  */
-router.post("/add-candidate", protect, adminOnly, addCandidate);
+router.post("/add-candidate", protect, adminOnly, async (req, res, next) => {
+  try {
+    // ✅ Delegate to your controller and ensure JSON-only responses
+    const result = await addCandidate(req, res);
 
-router.post(
-  "/add-candidate",
-  protect,
-  adminOnly,
-  upload.single("image"), // ✅ handles file upload
-  addCandidate
-);
+    // If controller doesn’t send its own response, send a fallback
+    if (!res.headersSent) {
+      res.status(201).json({ success: true, message: "Candidate added successfully", result });
+    }
+  } catch (error) {
+    console.error("Error in /admin/add-candidate:", error);
 
-// existing routes
+    // ✅ Always return JSON, never HTML
+    res
+      .status(error.status || 500)
+      .json({ success: false, message: error.message || "Server error" });
+  }
+});
+
+// === Other Admin Routes ===
 router.delete("/admin/reset-all", protect, adminOnly, resetAllVotes);
 router.post("/reset", protect, adminOnly, resetVotes);
 router.get("/vote-summary", protect, adminOnly, getVoteSummary);
