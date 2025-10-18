@@ -3,6 +3,22 @@ import Candidate from "../models/Candidate.js";
 import Vote from "../models/Vote.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
+
+/**
+ * @desc Get all candidates (flat list for admin summary)
+ * @route GET /api/admin/candidates
+ * @access Admin
+ */
+export const getAllCandidates = async (req, res) => {
+  try {
+    const candidates = await Candidate.find().sort({ position: 1, name: 1 });
+    res.status(200).json(candidates);
+  } catch (error) {
+    console.error("Error fetching candidates:", error);
+    res.status(500).json({ message: "Server error fetching candidates" });
+  }
+};
+
 /**
  * @desc    Get vote summary for all categories
  * @route   GET /api/admin/vote-summary
