@@ -44,6 +44,6 @@ const router = express.Router();
  *       500:
  *         description: Internal server error.
  */
-router.get("/candidates", getAllCandidates);
+router.get("/", getAllCandidates);
 
 export default router;
