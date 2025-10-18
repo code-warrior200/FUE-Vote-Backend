@@ -90,3 +90,13 @@ export const addCandidate = asyncHandler(async (req, res) => {
     candidate,
   });
 });
+
+export const getCandidates = async (req, res) => {
+  try {
+    const candidates = await Candidate.find().sort({ position: 1 });
+    res.json(candidates);
+  } catch (error) {
+    console.error("Error fetching candidates:", error);
+    res.status(500).json({ message: "Server error fetching candidates" });
+  }
+};
