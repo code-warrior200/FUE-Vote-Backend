@@ -13,17 +13,21 @@ import adminRoutes from "../routes/adminRoutes.js";
 import voteRoutes from "../routes/voteRoute.js";
 import authRoutes from "../routes/authRoutes.js";
 
+// Middleware
+import { errorHandler } from "../middleware/errorMiddleware.js";
+
 dotenv.config();
 connectDB();
 
 const app = express();
+
+// ✅ Middlewares
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// ✅ Swagger setup (works locally & on Render)
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  explorer: true, // enables "Explore" button in Swagger UI
-}));
+// ✅ Swagger setup
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, { explorer: true }));
 
 // ✅ API Routes
 app.use("/api/auth", authRoutes);
@@ -32,37 +36,34 @@ app.use("/api/candidates", candidateRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/vote", voteRoutes);
 
-// ✅ Create HTTP server & Socket.IO setup
-const server = http.createServer(app);
+// ✅ 404 handler for unknown routes
+app.use((req, res) => {
+  res.status(404).json({ message: "Route not found" });
+});
 
-// ✅ Allow Expo + Web + Render connections
-const allowedOrigins = [
-  "http://localhost:8081",        // Expo Go local dev
-  "http://localhost:19006",       // Expo web preview
-  "exp://127.0.0.1:19000",        // Expo LAN URL
-  "https://fue-vote-frontend.onrender.com", // your deployed frontend (if any)
-  "https://fue-vote-backend-1.onrender.com" // Render backend itself
-];
+// ✅ Global error handler (must be after routes)
+app.use(errorHandler);
+
+// ✅ Create HTTP server & Socket.IO
+const server = http.createServer(app);
 
 export const io = new Server(server, {
   cors: {
     origin: "*",
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: false,
+    credentials: false,
   },
 });
 
 io.on("connection", (socket) => {
   console.log("🔌 Client connected:", socket.id);
-  socket.on("disconnect", () => {
-    console.log("❌ Client disconnected:", socket.id);
-  });
+  socket.on("disconnect", () => console.log("❌ Client disconnected:", socket.id));
 });
 
-// ✅ Dynamic PORT for Render deployment
+// ✅ Dynamic PORT
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
-  console.log(`📘 Swagger Docs available at: http://localhost:${PORT}/api-docs`);
+  console.log(`📘 Swagger Docs: http://localhost:${PORT}/api-docs`);
 });
