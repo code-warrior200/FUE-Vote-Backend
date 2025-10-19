@@ -16,6 +16,20 @@ router.use(
 // ✅ Parse JSON request body
 router.use(express.json());
 
+// ✅ List of 10 default voters
+const defaultVoters = [
+  "EZ/CSC1001/2025",
+  "EZ/CSC1002/2025",
+  "EZ/MTH1003/2025",
+  "EZ/BCH1004/2025",
+  "EZ/ENG1005/2025",
+  "EZ/PHY1006/2025",
+  "EZ/BIO1007/2025",
+  "EZ/STA1008/2025",
+  "EZ/ECO1009/2025",
+  "EZ/ACC1010/2025",
+];
+
 /**
  * @swagger
  * tags:
@@ -38,17 +52,24 @@ router.post("/voter-login", (req, res) => {
     return res.status(400).json({ message: "Registration number is required" });
   }
 
-  // ✅ Match valid pattern like "EZ/CSC2314/2025" or "EZ/MTH1020/2025"
+  // ✅ Match valid pattern like "EZ/CSC2314/2025"
   const regPattern = /^EZ\/[A-Z]{3}\d{4}\/2025$/i;
 
   if (!regPattern.test(regnumber)) {
     return res.status(401).json({ message: "Invalid registration number format" });
   }
 
-  // ✅ Dynamic voter object
+  // ✅ Check if the regnumber exists in the default list
+  const isRegistered = defaultVoters.includes(regnumber.toUpperCase());
+
+  if (!isRegistered) {
+    return res.status(401).json({ message: "Registration number not found" });
+  }
+
+  // ✅ Create voter object
   const voter = {
-    id: Math.floor(Math.random() * 100000),
-    regnumber,
+    id: defaultVoters.indexOf(regnumber.toUpperCase()) + 1,
+    regnumber: regnumber.toUpperCase(),
   };
 
   // ✅ Generate JWT token
