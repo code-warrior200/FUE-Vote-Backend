@@ -2,20 +2,19 @@ import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
 /**
- * ✅ Middleware to verify JWT or allow the default local admin token (for dev)
+ * ✅ Protect middleware — verifies JWT or allows local admin bypass
  */
 export const protect = async (req, res, next) => {
   let token;
 
-  // Check Authorization header
   if (
     req.headers.authorization &&
-    req.headers.authorization.startsWith("Bearer")
+    req.headers.authorization.startsWith("Bearer ")
   ) {
     try {
       token = req.headers.authorization.split(" ")[1];
 
-      // ✅ Allow the local default admin bypass (for testing)
+      // ✅ Local admin bypass (for development/testing only)
       if (token === "local-admin-token") {
         req.user = {
           _id: "local-admin",
@@ -26,7 +25,7 @@ export const protect = async (req, res, next) => {
         return next();
       }
 
-      // ✅ Verify real JWT
+      // ✅ Verify JWT using secret
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       const user = await User.findById(decoded.id).select("-password");
 
@@ -34,8 +33,8 @@ export const protect = async (req, res, next) => {
         return res.status(404).json({ message: "User not found" });
       }
 
-      // ✅ Enforce single active session
-      if (user.activeToken !== token) {
+      // ✅ Optional: only enforce activeToken check if it exists
+      if (user.activeToken && user.activeToken !== token) {
         return res.status(401).json({
           message:
             "You have been logged out from another device. Please log in again.",
@@ -45,18 +44,21 @@ export const protect = async (req, res, next) => {
       req.user = user;
       next();
     } catch (error) {
-      console.error("Auth error:", error);
+      console.error("❌ JWT verification error:", error.message);
+
+      if (error.name === "TokenExpiredError") {
+        return res.status(401).json({ message: "Token expired. Please log in again." });
+      }
+
       return res.status(401).json({ message: "Not authorized, invalid token" });
     }
   } else {
-    return res
-      .status(401)
-      .json({ message: "Not authorized, no token provided" });
+    return res.status(401).json({ message: "Not authorized, no token provided" });
   }
 };
 
 /**
- * ✅ Admin-only route protection
+ * ✅ Admin-only middleware
  */
 export const adminOnly = (req, res, next) => {
   if (req.user && req.user.role === "admin") return next();
@@ -64,7 +66,7 @@ export const adminOnly = (req, res, next) => {
 };
 
 /**
- * ✅ Voter-only route protection
+ * ✅ Voter-only middleware
  */
 export const voterOnly = (req, res, next) => {
   if (req.user && req.user.role === "voter") return next();
