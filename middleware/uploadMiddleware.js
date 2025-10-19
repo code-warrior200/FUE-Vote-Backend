@@ -5,9 +5,9 @@ import cloudinary from "../config/cloudinary.js";
 const storage = new CloudinaryStorage({
   cloudinary,
   params: {
-    folder: "vote_upload", // your Cloudinary folder name
-    allowed_formats: ["jpg", "jpeg", "png"],
-    transformation: [{ width: 500, height: 500, crop: "limit" }],
+    folder: "vote_upload", // ✅ your Cloudinary folder name
+    allowed_formats: ["jpg", "jpeg", "png", "webp"],
+    transformation: [{ width: 500, height: 500, crop: "fill" }],
   },
 });
 

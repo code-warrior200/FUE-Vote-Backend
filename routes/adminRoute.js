@@ -11,60 +11,73 @@ import { protect, adminOnly } from "../middleware/authMiddleware.js";
 const router = express.Router();
 
 /**
- * POST /api/admin/add-candidate
- * Add a new candidate (admin only)
+ * @route POST /api/admin/add-candidate
+ * @desc Add a new candidate (admin only)
  */
-router.post("/admin/add-candidate", protect, adminOnly, async (req, res) => {
+router.post("/add-candidate", protect, adminOnly, async (req, res) => {
   try {
-    // addCandidate should handle validation and saving, and return the new candidate
-    const result = await addCandidate(req, res);
+    const candidate = await addCandidate(req, res);
 
-    // If the controller already sent a response, don't send again
-    if (!res.headersSent) {
-      return res.status(201).json({
-        success: true,
-        message: "Candidate added successfully",
-        candidate: result,
-      });
-    }
+    // Ensure controller didn't already send a response
+    if (res.headersSent) return;
+
+    return res.status(201).json({
+      success: true,
+      message: "Candidate added successfully",
+      data: candidate,
+    });
   } catch (error) {
-    console.error("Error in /admin/add-candidate:", error);
-    return res.status(error.status || 500).json({
+    console.error("❌ Error in POST /api/admin/add-candidate:", error);
+
+    // Unified error structure
+    return res.status(error.statusCode || 500).json({
       success: false,
-      message: error.message || "Server error",
+      message: error.message || "Internal server error while adding candidate",
+      details: process.env.NODE_ENV === "development" ? error.stack : undefined,
     });
   }
 });
 
 /**
- * GET /api/admin/candidates
- * Return all candidates
+ * @route GET /api/admin/candidates
+ * @desc Get all candidates (public or admin view)
  */
-router.get("/admin/candidates", getCandidates,async (req, res) => {
+router.get("/candidates", async (req, res) => {
   try {
     const candidates = await getCandidates(req, res);
-    if (!res.headersSent) {
-      return res.json(candidates);
-    }
+
+    if (res.headersSent) return;
+
+    return res.status(200).json({
+      success: true,
+      count: candidates.length,
+      data: candidates,
+    });
   } catch (error) {
-    console.error("Error in GET /admin/candidates:", error);
-    return res.status(500).json({ message: "Server error fetching candidates" });
+    console.error("❌ Error in GET /api/admin/candidates:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching candidates",
+    });
   }
 });
 
 /**
- * DELETE /api/admin/reset-all
+ * @route DELETE /api/admin/reset-all
+ * @desc Reset all votes (admin only)
  */
-router.delete("/admin/reset-all", protect, adminOnly, resetAllVotes);
+router.delete("/reset-all", protect, adminOnly, resetAllVotes);
 
 /**
- * POST /api/admin/reset
+ * @route POST /api/admin/reset
+ * @desc Reset votes for a specific position (admin only)
  */
-router.post("/admin/reset", protect, adminOnly, resetVotes);
+router.post("/reset", protect, adminOnly, resetVotes);
 
 /**
- * GET /api/admin/vote-summary
+ * @route GET /api/admin/vote-summary
+ * @desc Get voting summary (admin only)
  */
-router.get("/admin/vote-summary", protect, adminOnly, getVoteSummary);
+router.get("/vote-summary", protect, adminOnly, getVoteSummary);
 
 export default router;
