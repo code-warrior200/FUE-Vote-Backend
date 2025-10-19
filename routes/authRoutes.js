@@ -2,6 +2,7 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import cors from "cors";
 
+
 const router = express.Router();
 
 // ✅ Temporary in-memory voter for example
