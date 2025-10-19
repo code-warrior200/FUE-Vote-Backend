@@ -24,7 +24,7 @@ export const loginUser = async (req, res) => {
       return res.status(400).json({ message: "Please enter all fields." });
     }
 
-    // ✅ Find by either matric number or email
+    // ✅ Find by matric number or email
     const user = await User.findOne({
       $or: [{ matricNo: matricOrEmail }, { email: matricOrEmail }],
     });
@@ -33,7 +33,7 @@ export const loginUser = async (req, res) => {
       return res.status(404).json({ message: "User not found." });
     }
 
-    // ✅ Check password
+    // ✅ Verify password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid credentials." });
@@ -42,14 +42,15 @@ export const loginUser = async (req, res) => {
     // ✅ Generate JWT
     const token = generateToken(user._id);
 
-    // ✅ Optional: Store token in DB for single-session control
+    // ✅ Save token in DB for session tracking
     user.activeToken = token;
     await user.save();
 
-    // ✅ Send response to frontend
+    // ✅ Return consistent token key name: "token"
     res.status(200).json({
+      success: true,
       message: "Login successful",
-      jwt_token: token,
+      token, // ✅ standardized key
       user: {
         id: user._id,
         name: user.name,
@@ -59,30 +60,37 @@ export const loginUser = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("❌ Login error:", err);
+    console.error("❌ Login error:", err.message);
     res.status(500).json({ message: "Server error. Please try again." });
   }
 };
 
 /**
  * @route   POST /api/auth/logout
- * @desc    Logs the user out by clearing active token
+ * @desc    Logs out user by clearing active token
  * @access  Private
  */
 export const logoutUser = async (req, res) => {
   try {
-    if (!req.user) return res.status(400).json({ message: "User not authenticated." });
+    if (!req.user) {
+      return res.status(400).json({ message: "User not authenticated." });
+    }
 
     req.user.activeToken = null;
     await req.user.save();
 
     res.status(200).json({ message: "Logged out successfully." });
   } catch (err) {
-    console.error("❌ Logout error:", err);
+    console.error("❌ Logout error:", err.message);
     res.status(500).json({ message: "Server error." });
   }
 };
 
+/**
+ * @route   GET /api/auth/verify
+ * @desc    Verify token validity
+ * @access  Private
+ */
 export const verifyToken = async (req, res) => {
   const authHeader = req.headers.authorization;
 
@@ -100,7 +108,13 @@ export const verifyToken = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Optional: check if token matches user's activeToken
     if (user.activeToken && user.activeToken !== token) {
       return res.status(401).json({ message: "Session invalidated. Please log in again." });
     }
+
+    res.status(200).json({ valid: true, user });
+  } catch (err) {
+    console.error("❌ Token verify error:", err.message);
+    res.status(401).json({ message: "Invalid or expired token" });
+  }
+};
