@@ -1,121 +1,127 @@
 import Vote from "../models/Vote.js";
 import Candidate from "../models/Candidate.js";
 
-// 🧾 CAST VOTE — voter can only vote once per category
+/**
+ * @desc Cast a vote for a candidate
+ * @route POST /api/vote
+ * @access Private (voter only)
+ */
 export const castVote = async (req, res) => {
   try {
     const voterId = req.user._id;
     const { candidateId } = req.body;
 
-    const candidate = await Candidate.findById(candidateId);
-    if (!candidate) {
-      return res.status(404).json({ message: "Candidate not found" });
+    if (!candidateId) {
+      return res.status(400).json({
+        success: false,
+        message: "Candidate ID is required.",
+      });
     }
 
-    // ✅ Check if user already voted in this category
+    // ✅ Ensure candidate exists
+    const candidate = await Candidate.findById(candidateId);
+    if (!candidate) {
+      return res.status(404).json({
+        success: false,
+        message: "Candidate not found.",
+      });
+    }
+
+    // ✅ Check if the voter already voted for this position
     const alreadyVoted = await Vote.findOne({
       voterId,
-      categoryId: candidate.categoryId,
+      position: candidate.position,
     });
 
     if (alreadyVoted) {
-      return res
-        .status(400)
-        .json({ message: "You have already voted in this category" });
+      return res.status(400).json({
+        success: false,
+        message: `You have already voted for the position of "${candidate.position}".`,
+      });
     }
 
+    // ✅ Record new vote
     const vote = await Vote.create({
       voterId,
       candidateId,
-      categoryId: candidate.categoryId,
+      position: candidate.position,
     });
 
-    res.status(201).json({ message: "Vote cast successfully", vote });
+    // ✅ Increment candidate's vote count atomically and safely
+    await Candidate.findByIdAndUpdate(candidateId, {
+      $inc: { totalVotes: 1 },
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: `✅ Your vote for "${candidate.name}" as "${candidate.position}" has been recorded successfully.`,
+      data: vote,
+    });
   } catch (error) {
-    if (error.code === 11000) {
-      return res
-        .status(400)
-        .json({ message: "You have already voted in this category" });
-    }
-    res.status(500).json({ message: error.message });
+    console.error("❌ Error casting vote:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error while casting vote.",
+    });
   }
 };
 
-// 🧾 RESET ALL VOTES (ADMIN ONLY)
+/**
+ * @desc Reset all votes (admin only)
+ * @route DELETE /api/admin/reset-all
+ * @access Private (admin)
+ */
 export const resetAllVotes = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
-      return res
-        .status(403)
-        .json({ message: "Access denied. Admins only." });
-    }
-
     await Vote.deleteMany({});
-    res.status(200).json({ message: "All votes have been reset successfully." });
+    await Candidate.updateMany({}, { $set: { totalVotes: 0 } });
+
+    return res.status(200).json({
+      success: true,
+      message: "✅ All votes have been reset successfully.",
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("❌ Error resetting all votes:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error while resetting votes.",
+    });
   }
 };
 
-// 🧾 RESET VOTES FOR A SPECIFIC CANDIDATE (ADMIN ONLY)
+/**
+ * @desc Reset votes for a specific position (admin only)
+ * @route POST /api/admin/reset
+ * @access Private (admin)
+ */
 export const resetVotes = async (req, res) => {
   try {
-    if (req.user.role !== "admin") {
-      return res
-        .status(403)
-        .json({ message: "Access denied. Admins only." });
+    const { position } = req.body;
+    if (!position) {
+      return res.status(400).json({
+        success: false,
+        message: "Position is required.",
+      });
     }
 
-    const { candidateId } = req.body;
+    // Delete votes for that position
+    await Vote.deleteMany({ position });
 
-    if (!candidateId) {
-      return res.status(400).json({ message: "Candidate ID is required." });
-    }
+    // Reset candidate vote count for that position
+    await Candidate.updateMany(
+      { position },
+      { $set: { totalVotes: 0 } }
+    );
 
-    const deleted = await Vote.deleteMany({ candidateId });
-
-    res.status(200).json({
-      message: `Votes for candidate ${candidateId} have been reset.`,
-      deletedCount: deleted.deletedCount,
+    return res.status(200).json({
+      success: true,
+      message: `✅ Votes for the "${position}" position have been reset.`,
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// 🧾 RESET VOTES BY CATEGORY (ADMIN ONLY)
-export const resetVotesByCategory = async (req, res) => {
-  try {
-    if (req.user.role !== "admin") {
-      return res
-        .status(403)
-        .json({ message: "Access denied. Admins only." });
-    }
-
-    const { categoryId } = req.params;
-    const deleted = await Vote.deleteMany({ categoryId });
-
-    res.status(200).json({
-      message: `Votes for category ${categoryId} have been reset.`,
-      deletedCount: deleted.deletedCount,
+    console.error("❌ Error resetting position votes:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error while resetting position votes.",
     });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// 🧾 RESET OWN VOTES (VOTER)
-export const resetMyVotes = async (req, res) => {
-  try {
-    const voterId = req.user._id;
-
-    const deleted = await Vote.deleteMany({ voterId });
-
-    res.status(200).json({
-      message: "Your votes have been reset successfully.",
-      deletedCount: deleted.deletedCount,
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
   }
 };
