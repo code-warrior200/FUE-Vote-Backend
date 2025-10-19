@@ -2,11 +2,7 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import cors from "cors";
 
-
 const router = express.Router();
-
-// ✅ Temporary in-memory voter for example
-const voter = { id: 1, regnumber: "EZ/CSC2314/2025" };
 
 // ✅ Allow frontend access (CORS)
 router.use(
@@ -34,97 +30,48 @@ router.use(express.json());
  *     summary: Voter login using registration number
  *     description: Allows a registered voter to log in using only their registration number and receive a JWT token.
  *     tags: [VoterAuth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - regnumber
- *             properties:
- *               regnumber:
- *                 type: string
- *                 example: "EZ/CSC2314/2025"
- *     responses:
- *       200:
- *         description: Login successful, JWT returned.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Login successful
- *                 token:
- *                   type: string
- *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
- *                 voter:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: integer
- *                       example: 1
- *                     regnumber:
- *                       type: string
- *                       example: EZ/CSC2314/2025
- *       401:
- *         description: Invalid registration number.
- *       500:
- *         description: Internal server error.
  */
 router.post("/voter-login", (req, res) => {
   const { regnumber } = req.body;
 
-  if (!regnumber || regnumber !== voter.regnumber) {
-    return res.status(401).json({ message: "Invalid registration number" });
+  if (!regnumber) {
+    return res.status(400).json({ message: "Registration number is required" });
   }
 
-  // ✅ Generate JWT token for voter
+  // ✅ Match valid pattern like "EZ/CSC2314/2025" or "EZ/MTH1020/2025"
+  const regPattern = /^EZ\/[A-Z]{3}\d{4}\/2025$/i;
+
+  if (!regPattern.test(regnumber)) {
+    return res.status(401).json({ message: "Invalid registration number format" });
+  }
+
+  // ✅ Dynamic voter object
+  const voter = {
+    id: Math.floor(Math.random() * 100000),
+    regnumber,
+  };
+
+  // ✅ Generate JWT token
   const token = jwt.sign(
     { id: voter.id, regnumber: voter.regnumber },
     process.env.JWT_SECRET || "fallback_secret_key",
-    { expiresIn: "1h" }
+    { expiresIn: "3h" }
   );
 
   return res.json({
     message: "Login successful",
     token,
-    voter: { id: voter.id, regnumber: voter.regnumber },
+    voter,
   });
 });
 
 /**
  * @swagger
- * /auth/voter-dashboard:
+ * /auth/home:
  *   get:
  *     summary: Get voter dashboard (protected route)
  *     description: Returns basic voter information. Requires a valid JWT in the `Authorization` header.
  *     tags: [VoterAuth]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Dashboard data retrieved successfully.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Welcome to your dashboard
- *                 voter:
- *                   type: object
- *                   properties:
- *                     regnumber:
- *                       type: string
- *                       example: EZ/CSC2314/2025
- *       401:
- *         description: Unauthorized - missing or invalid token.
- *       500:
- *         description: Internal server error.
  */
 router.get("/home", (req, res) => {
   const authHeader = req.headers.authorization;
@@ -140,6 +87,7 @@ router.get("/home", (req, res) => {
       token,
       process.env.JWT_SECRET || "fallback_secret_key"
     );
+
     return res.json({
       message: "Welcome to your dashboard",
       voter: { regnumber: decoded.regnumber },
