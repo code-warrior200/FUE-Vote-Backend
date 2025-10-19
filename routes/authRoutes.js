@@ -16,7 +16,7 @@ router.use(
 // ✅ Parse JSON request body
 router.use(express.json());
 
-// ✅ List of 10 default voters
+// ✅ Default voter list
 const defaultVoters = [
   "EZ/CSC1001/2025",
   "EZ/CSC1002/2025",
@@ -30,20 +30,24 @@ const defaultVoters = [
   "EZ/ACC1010/2025",
 ];
 
-/**
- * @swagger
- * tags:
- *   name: VoterAuth
- *   description: Authentication routes for voters
- */
+// ✅ Token duration
+const TOKEN_EXPIRATION = "7d"; // 7 days
+const SECRET_KEY = process.env.JWT_SECRET || "fallback_secret_key";
 
 /**
- * @swagger
- * /auth/voter-login:
- *   post:
- *     summary: Voter login using registration number
- *     description: Allows a registered voter to log in using only their registration number and receive a JWT token.
- *     tags: [VoterAuth]
+ * @desc Generate JWT
+ */
+const generateToken = (voter) => {
+  return jwt.sign(
+    { id: voter.id, regnumber: voter.regnumber },
+    SECRET_KEY,
+    { expiresIn: TOKEN_EXPIRATION }
+  );
+};
+
+/**
+ * @route POST /auth/voter-login
+ * @desc Login voter using registration number
  */
 router.post("/voter-login", (req, res) => {
   const { regnumber } = req.body;
@@ -52,32 +56,22 @@ router.post("/voter-login", (req, res) => {
     return res.status(400).json({ message: "Registration number is required" });
   }
 
-  // ✅ Match valid pattern like "EZ/CSC2314/2025"
   const regPattern = /^EZ\/[A-Z]{3}\d{4}\/2025$/i;
-
   if (!regPattern.test(regnumber)) {
     return res.status(401).json({ message: "Invalid registration number format" });
   }
 
-  // ✅ Check if the regnumber exists in the default list
-  const isRegistered = defaultVoters.includes(regnumber.toUpperCase());
-
-  if (!isRegistered) {
+  const index = defaultVoters.findIndex((v) => v.toUpperCase() === regnumber.toUpperCase());
+  if (index === -1) {
     return res.status(401).json({ message: "Registration number not found" });
   }
 
-  // ✅ Create voter object
   const voter = {
-    id: defaultVoters.indexOf(regnumber.toUpperCase()) + 1,
+    id: index + 1,
     regnumber: regnumber.toUpperCase(),
   };
 
-  // ✅ Generate JWT token
-  const token = jwt.sign(
-    { id: voter.id, regnumber: voter.regnumber },
-    process.env.JWT_SECRET || "fallback_secret_key",
-    { expiresIn: "3h" }
-  );
+  const token = generateToken(voter);
 
   return res.json({
     message: "Login successful",
@@ -87,16 +81,11 @@ router.post("/voter-login", (req, res) => {
 });
 
 /**
- * @swagger
- * /auth/home:
- *   get:
- *     summary: Get voter dashboard (protected route)
- *     description: Returns basic voter information. Requires a valid JWT in the `Authorization` header.
- *     tags: [VoterAuth]
+ * @route GET /auth/home
+ * @desc Get voter dashboard (protected)
  */
 router.get("/home", (req, res) => {
   const authHeader = req.headers.authorization;
-
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ message: "No token provided" });
   }
@@ -104,14 +93,44 @@ router.get("/home", (req, res) => {
   const token = authHeader.split(" ")[1];
 
   try {
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "fallback_secret_key"
-    );
+    const decoded = jwt.verify(token, SECRET_KEY);
 
     return res.json({
       message: "Welcome to your dashboard",
       voter: { regnumber: decoded.regnumber },
+    });
+  } catch (error) {
+    return res.status(401).json({ message: "Invalid or expired token" });
+  }
+});
+
+/**
+ * @route POST /auth/refresh
+ * @desc Refresh voter JWT token
+ */
+router.post("/refresh", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ message: "No token provided" });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  try {
+    const decoded = jwt.verify(token, SECRET_KEY);
+
+    const voter = {
+      id: decoded.id,
+      regnumber: decoded.regnumber,
+    };
+
+    const newToken = generateToken(voter);
+
+    return res.json({
+      success: true,
+      message: "Token refreshed successfully",
+      token: newToken,
+      voter,
     });
   } catch (error) {
     return res.status(401).json({ message: "Invalid or expired token" });
