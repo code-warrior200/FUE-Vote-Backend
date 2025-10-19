@@ -37,8 +37,9 @@ app.use("/api/auth", authRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/candidates", candidateRoutes);
 app.use("/api/admin", adminRoute);
-app.use("/api/admin", adminRoutes);
+//app.use("/api/admin", adminRoutes);
 app.use("/api/vote", voteRoutes);
+app.use("/api", adminRoutes);
 
 // ✅ 404 handler for unknown routes
 app.use((req, res) => {
