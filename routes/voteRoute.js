@@ -10,7 +10,7 @@ const router = express.Router();
  * @desc Cast a vote for a candidate
  * @access Private (authenticated voters only)
  */
-router.post("/", protect, voterOnly, async (req, res) => {
+router.post("/", voterOnly, async (req, res) => {
   try {
     const result = await castVote(req, res);
 

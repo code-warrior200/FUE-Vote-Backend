@@ -30,19 +30,35 @@ const defaultVoters = [
   "EZ/ACC1010/2025",
 ];
 
-// ✅ Token duration
+// ✅ Token config
 const TOKEN_EXPIRATION = "7d"; // 7 days
 const SECRET_KEY = process.env.JWT_SECRET || "fallback_secret_key";
 
-/**
- * @desc Generate JWT
- */
+// ✅ Generate JWT token
 const generateToken = (voter) => {
   return jwt.sign(
     { id: voter.id, regnumber: voter.regnumber },
     SECRET_KEY,
     { expiresIn: TOKEN_EXPIRATION }
   );
+};
+
+// ✅ Middleware: verify token and attach voter
+const verifyToken = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ message: "No token provided" });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  try {
+    const decoded = jwt.verify(token, SECRET_KEY);
+    req.voter = { id: decoded.id, regnumber: decoded.regnumber };
+    next();
+  } catch (err) {
+    return res.status(401).json({ message: "Invalid or expired token" });
+  }
 };
 
 /**
@@ -74,6 +90,7 @@ router.post("/voter-login", (req, res) => {
   const token = generateToken(voter);
 
   return res.json({
+    success: true,
     message: "Login successful",
     token,
     voter,
@@ -82,59 +99,30 @@ router.post("/voter-login", (req, res) => {
 
 /**
  * @route GET /auth/home
- * @desc Get voter dashboard (protected)
+ * @desc Protected route: get voter dashboard
  */
-router.get("/home", (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "No token provided" });
-  }
-
-  const token = authHeader.split(" ")[1];
-
-  try {
-    const decoded = jwt.verify(token, SECRET_KEY);
-
-    return res.json({
-      message: "Welcome to your dashboard",
-      voter: { regnumber: decoded.regnumber },
-    });
-  } catch (error) {
-    return res.status(401).json({ message: "Invalid or expired token" });
-  }
+router.get("/home", verifyToken, (req, res) => {
+  return res.json({
+    success: true,
+    message: "Welcome to your dashboard",
+    voter: { regnumber: req.voter.regnumber },
+  });
 });
 
 /**
  * @route POST /auth/refresh
- * @desc Refresh voter JWT token
+ * @desc Refresh JWT token
  */
-router.post("/refresh", (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "No token provided" });
-  }
+router.post("/refresh", verifyToken, (req, res) => {
+  const voter = req.voter;
+  const newToken = generateToken(voter);
 
-  const token = authHeader.split(" ")[1];
-
-  try {
-    const decoded = jwt.verify(token, SECRET_KEY);
-
-    const voter = {
-      id: decoded.id,
-      regnumber: decoded.regnumber,
-    };
-
-    const newToken = generateToken(voter);
-
-    return res.json({
-      success: true,
-      message: "Token refreshed successfully",
-      token: newToken,
-      voter,
-    });
-  } catch (error) {
-    return res.status(401).json({ message: "Invalid or expired token" });
-  }
+  return res.json({
+    success: true,
+    message: "Token refreshed successfully",
+    token: newToken,
+    voter,
+  });
 });
 
 export default router;
