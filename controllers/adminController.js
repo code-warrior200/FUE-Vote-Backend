@@ -56,6 +56,13 @@ export const getVoteSummary = asyncHandler(async (req, res) => {
 export const addCandidate = asyncHandler(async (req, res) => {
   const { name, position, department, categoryId, image } = req.body;
 
+  // Use image URL from frontend (Cloudinary) if available
+  const candidateImage = image && image.trim() !== "" 
+    ? image 
+    : (req.file ? `/uploads/${req.file.filename}` : "");
+
+
+
   // ✅ Validate input
   if (!name || !position || !department || !image) {
     return res.status(400).json({
@@ -85,9 +92,9 @@ export const addCandidate = asyncHandler(async (req, res) => {
     position,
     department,
     categoryId: categoryId || null,
-    image,
-    votes: 0,
+    image: candidateImage, // ✅ use the Cloudinary URL
   });
+
 
   // ✅ Return plain object for frontend
   res.status(201).json(candidate);
