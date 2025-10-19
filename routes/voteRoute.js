@@ -1,7 +1,7 @@
 // routes/voteRoutes.js
 import express from "express";
 import { castVote } from "../controllers/voteController.js";
-import { protect, voterOnly } from "../middleware/authMiddleware.js";
+import {voterOnly } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
@@ -10,7 +10,7 @@ const router = express.Router();
  * @desc Cast a vote for a candidate
  * @access Private (authenticated voters only)
  */
-router.post("/",protect, voterOnly, async (req, res) => {
+router.post("/", voterOnly, async (req, res) => {
   try {
     const result = await castVote(req, res);
 
