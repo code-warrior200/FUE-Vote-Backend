@@ -7,14 +7,11 @@ import User from "../models/User.js";
 export const protect = async (req, res, next) => {
   let token;
 
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith("Bearer ")
-  ) {
+  if (req.headers.authorization && req.headers.authorization.startsWith("Bearer ")) {
     try {
       token = req.headers.authorization.split(" ")[1];
 
-      // ✅ Local admin bypass (for development/testing only)
+      // ✅ Allow local admin bypass (for dashboard testing)
       if (token === "local-admin-token") {
         req.user = {
           _id: "local-admin",
@@ -25,22 +22,23 @@ export const protect = async (req, res, next) => {
         return next();
       }
 
-      // ✅ Verify JWT using secret
+      // ✅ Verify JWT (for voters or registered users)
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(decoded.id).select("-password");
 
+      // Fetch user by decoded ID
+      const user = await User.findById(decoded.id).select("-password");
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
 
-      // ✅ Optional: only enforce activeToken check if it exists
+      // ✅ Optional single-session check (only if activeToken is set)
       if (user.activeToken && user.activeToken !== token) {
         return res.status(401).json({
-          message:
-            "You have been logged out from another device. Please log in again.",
+          message: "You have been logged out from another device. Please log in again.",
         });
       }
 
+      // Attach user to request
       req.user = user;
       next();
     } catch (error) {
