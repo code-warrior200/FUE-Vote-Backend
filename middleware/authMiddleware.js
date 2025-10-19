@@ -7,51 +7,55 @@ import User from "../models/User.js";
 export const protect = async (req, res, next) => {
   let token;
 
-  if (req.headers.authorization && req.headers.authorization.startsWith("Bearer ")) {
-    try {
-      token = req.headers.authorization.split(" ")[1];
+  try {
+    const authHeader = req.headers.authorization;
+    console.log("🔐 Authorization Header:", authHeader); // ✅ Log for debugging
 
-      // ✅ Allow local admin bypass (for dashboard testing)
-      if (token === "local-admin-token") {
-        req.user = {
-          _id: "local-admin",
-          username: "admin",
-          role: "admin",
-          devBypass: true,
-        };
-        return next();
-      }
-
-      // ✅ Verify JWT (for voters or registered users)
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-      // Fetch user by decoded ID
-      const user = await User.findById(decoded.id).select("-password");
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      // ✅ Optional single-session check (only if activeToken is set)
-      if (user.activeToken && user.activeToken !== token) {
-        return res.status(401).json({
-          message: "You have been logged out from another device. Please log in again.",
-        });
-      }
-
-      // Attach user to request
-      req.user = user;
-      next();
-    } catch (error) {
-      console.error("❌ JWT verification error:", error.message);
-
-      if (error.name === "TokenExpiredError") {
-        return res.status(401).json({ message: "Token expired. Please log in again." });
-      }
-
-      return res.status(401).json({ message: "Not authorized, invalid token" });
+    // ✅ 1. Check if token exists
+    if (authHeader && authHeader.startsWith("Bearer")) {
+      token = authHeader.split(" ")[1]; // works with or without trailing space
+    } else {
+      return res.status(401).json({ message: "Not authorized, no token provided" });
     }
-  } else {
-    return res.status(401).json({ message: "Not authorized, no token provided" });
+
+    // ✅ 2. Allow local admin bypass before JWT verification
+    if (token === "local-admin-token") {
+      req.user = {
+        _id: "local-admin",
+        username: "admin",
+        role: "admin",
+        devBypass: true,
+      };
+      return next();
+    }
+
+    // ✅ 3. Verify JWT
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // ✅ 4. Find user in DB
+    const user = await User.findById(decoded.id).select("-password");
+    if (!user) {
+      return res.status(401).json({ message: "User not found" });
+    }
+
+    // ✅ 5. Optional single-session protection
+    if (user.activeToken && user.activeToken !== token) {
+      return res.status(401).json({
+        message: "You have been logged out from another device. Please log in again.",
+      });
+    }
+
+    // ✅ 6. Attach user to request
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error("❌ JWT verification error:", error.message);
+
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({ message: "Token expired. Please log in again." });
+    }
+
+    return res.status(401).json({ message: "Not authorized, invalid token" });
   }
 };
 
