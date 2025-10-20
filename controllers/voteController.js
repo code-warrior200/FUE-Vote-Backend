@@ -6,19 +6,26 @@ import Candidate from "../models/Candidate.js";
  * @route POST /api/vote
  * @access Private (voter only)
  */
+
 export const castVote = async (req, res) => {
   try {
-    const voterId = req.user._id;
-    const { candidateId } = req.body;
-
-    if (!candidateId) {
-      return res.status(400).json({
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({
         success: false,
-        message: "Candidate ID is required.",
+        message: "Unauthorized: user not found.",
       });
     }
 
-    // ✅ Ensure candidate exists
+    const voterId = req.user._id;
+    const { candidateId } = req.body;
+
+    if (!candidateId || !mongoose.Types.ObjectId.isValid(candidateId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or missing candidate ID.",
+      });
+    }
+
     const candidate = await Candidate.findById(candidateId);
     if (!candidate) {
       return res.status(404).json({
@@ -27,7 +34,6 @@ export const castVote = async (req, res) => {
       });
     }
 
-    // ✅ Check if the voter already voted for this position
     const alreadyVoted = await Vote.findOne({
       voterId,
       position: candidate.position,
@@ -36,21 +42,17 @@ export const castVote = async (req, res) => {
     if (alreadyVoted) {
       return res.status(400).json({
         success: false,
-        message: `You have already voted for the position of "${candidate.position}".`,
+        message: `You have already voted for "${candidate.position}".`,
       });
     }
 
-    // ✅ Record new vote
     const vote = await Vote.create({
       voterId,
       candidateId,
       position: candidate.position,
     });
 
-    // ✅ Increment candidate's vote count atomically and safely
-    await Candidate.findByIdAndUpdate(candidateId, {
-      $inc: { totalVotes: 1 },
-    });
+    await Candidate.findByIdAndUpdate(candidateId, { $inc: { totalVotes: 1 } });
 
     return res.status(201).json({
       success: true,
