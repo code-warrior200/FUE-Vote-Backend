@@ -104,3 +104,16 @@ export const resetVotes = async (req, res) => {
     return res.status(500).json({ message: "Failed to reset votes." });
   }
 };
+
+// 📊 Get voting results
+export const getResults = async (req, res) => {
+  try {
+    const results = await Candidate.find({})
+      .select("name position totalVotes -_id")
+      .sort({ position: 1, totalVotes: -1 }); 
+    return res.status(200).json({ results });
+  } catch (err) {
+    console.error("❌ Error fetching results:", err);
+    return res.status(500).json({ message: "Failed to fetch results." });
+  } 
+};  
