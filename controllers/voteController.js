@@ -2,17 +2,20 @@ import mongoose from "mongoose";
 import Candidate from "../models/Candidate.js";
 import Vote from "../models/Vote.js";
 
+/**
+ * 🗳️ Cast a Vote
+ */
 export const castVote = async (req, res) => {
   try {
-    // ✅ Ensure authenticated user
-    if (!req.user || !req.user._id) {
+    // ✅ Ensure authenticated voter
+    if (!req.user || !req.user.regnumber) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized: user not found.",
+        message: "Unauthorized: voter not found.",
       });
     }
 
-    const voterId = req.user._id;
+    const voterRegNumber = req.user.regnumber;
     const { candidateId } = req.body;
 
     // ✅ Validate candidate ID
@@ -32,9 +35,9 @@ export const castVote = async (req, res) => {
       });
     }
 
-    // ✅ Prevent double voting
+    // ✅ Prevent double voting (one vote per position)
     const alreadyVoted = await Vote.findOne({
-      voterId,
+      voterRegNumber,
       position: candidate.position,
     });
 
@@ -45,11 +48,9 @@ export const castVote = async (req, res) => {
       });
     }
 
-    
-
     // ✅ Record new vote
     const vote = await Vote.create({
-      voterId,
+      voterRegNumber,
       candidateId,
       position: candidate.position,
     });
@@ -71,9 +72,6 @@ export const castVote = async (req, res) => {
   }
 };
 
-
-// Add at the bottom of voteController.js
-
 /**
  * 🧹 Reset all votes (Admin only)
  */
@@ -89,7 +87,7 @@ export const resetAllVotes = async (req, res) => {
 };
 
 /**
- * 🧹 Reset votes for a single position (optional)
+ * 🧹 Reset votes for a specific position
  */
 export const resetVotes = async (req, res) => {
   try {

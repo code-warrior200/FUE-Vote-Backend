@@ -15,6 +15,18 @@ export const protect = (req, res, next) => {
 
     const token = authHeader.split(" ")[1];
 
+    try {
+    // JWT token directly includes regnumber
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = {
+      regnumber: decoded.regnumber,
+      role: decoded.role || "voter",
+    };
+    next();
+  } catch (err) {
+    return res.status(401).json({ message: "Invalid or expired token" });
+  }
+
     // 🧪 Optional: Local development bypass for admin testing
     if (token === "local-admin-token") {
       req.user = {
