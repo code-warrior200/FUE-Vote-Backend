@@ -85,6 +85,7 @@ router.post("/voter-login", (req, res) => {
   const voter = {
     id: index + 1,
     regnumber: regnumber.toUpperCase(),
+    role: "voter",
   };
 
   const token = generateToken(voter);
