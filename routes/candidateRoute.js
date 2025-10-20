@@ -3,47 +3,51 @@ import { getAllCandidates } from "../controllers/candidateController.js";
 
 const router = express.Router();
 
-/**
- * @swagger
- * tags:
- *   name: Candidates
- *   description: Candidate management and retrieval
- */
+// ======= SWAGGER TAGS =======
+export const swaggerCandidateTags = {
+  tags: [
+    {
+      name: "Candidates",
+      description: "Candidate management and retrieval",
+    },
+  ],
+};
 
-/**
- * @swagger
- * /candidates:
- *   get:
- *     summary: Get all candidates
- *     description: Retrieve a list of all candidates available in the system.
- *     tags: [Candidates]
- *     responses:
- *       200:
- *         description: Successfully retrieved the list of candidates.
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   id:
- *                     type: integer
- *                     example: 1
- *                   name:
- *                     type: string
- *                     example: "John Doe"
- *                   position:
- *                     type: string
- *                     example: "President"
- *                   votes:
- *                     type: integer
- *                     example: 120
- *       404:
- *         description: No candidates found.
- *       500:
- *         description: Internal server error.
- */
+// ======= SWAGGER ROUTE DEFINITION =======
+export const swaggerCandidatesRoutes = {
+  "/candidates": {
+    get: {
+      summary: "Get all candidates",
+      description: "Retrieve a list of all candidates available in the system.",
+      tags: ["Candidates"],
+      responses: {
+        200: {
+          description: "Successfully retrieved the list of candidates.",
+          content: {
+            "application/json": {
+              schema: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "integer", example: 1 },
+                    name: { type: "string", example: "John Doe" },
+                    position: { type: "string", example: "President" },
+                    votes: { type: "integer", example: 120 },
+                  },
+                },
+              },
+            },
+          },
+        },
+        404: { description: "No candidates found." },
+        500: { description: "Internal server error." },
+      },
+    },
+  },
+};
+
+// ======= ROUTES =======
 router.get("/", getAllCandidates);
 
 export default router;

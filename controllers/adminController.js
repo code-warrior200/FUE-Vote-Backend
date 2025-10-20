@@ -3,6 +3,33 @@ import Candidate from "../models/Candidate.js";
 import Vote from "../models/Vote.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
+/** Utility: Validate required candidate fields */
+const validateCandidateInput = ({ name, position, department, image }) => {
+  if (!name || !position || !department || !image) {
+    return "All fields (name, position, department, image) are required.";
+  }
+  return null;
+};
+
+/** Utility: Build candidate summary with vote count */
+const buildCandidateSummary = async (candidate) => ({
+  candidateName: candidate.name,
+  department: candidate.department,
+  totalVotes: await Vote.countDocuments({ candidateId: candidate._id }),
+});
+
+/** Utility: Build category summary */
+const buildCategorySummary = async (category) => {
+  const candidates = await Candidate.find({ categoryId: category._id });
+  const results = await Promise.all(candidates.map(buildCandidateSummary));
+
+  return {
+    category: category.name,
+    totalCandidates: candidates.length,
+    results,
+  };
+};
+
 /**
  * @desc Get all candidates (flat list for admin summary)
  * @route GET /api/admin/candidates
@@ -10,7 +37,7 @@ import { asyncHandler } from "../middleware/asyncHandler.js";
  */
 export const getAllCandidates = asyncHandler(async (req, res) => {
   const candidates = await Candidate.find().sort({ position: 1, name: 1 });
-  return res.status(200).json(candidates); // ✅ frontend expects a plain array
+  res.status(200).json(candidates);
 });
 
 /**
@@ -20,26 +47,7 @@ export const getAllCandidates = asyncHandler(async (req, res) => {
  */
 export const getVoteSummary = asyncHandler(async (req, res) => {
   const categories = await Category.find();
-
-  const summary = await Promise.all(
-    categories.map(async (category) => {
-      const candidates = await Candidate.find({ categoryId: category._id });
-
-      const results = await Promise.all(
-        candidates.map(async (cand) => ({
-          candidateName: cand.name,
-          department: cand.department,
-          totalVotes: await Vote.countDocuments({ candidateId: cand._id }),
-        }))
-      );
-
-      return {
-        category: category.name,
-        totalCandidates: candidates.length,
-        results,
-      };
-    })
-  );
+  const summary = await Promise.all(categories.map(buildCategorySummary));
 
   res.status(200).json({
     success: true,
@@ -57,46 +65,35 @@ export const addCandidate = asyncHandler(async (req, res) => {
   const { name, position, department, categoryId, image } = req.body;
 
   // Use image URL from frontend (Cloudinary) if available
-  const candidateImage = image && image.trim() !== "" 
-    ? image 
-    : (req.file ? `/uploads/${req.file.filename}` : "");
+  const candidateImage = image?.trim() || (req.file ? `/uploads/${req.file.filename}` : "");
 
+  // Validate input
+  const errorMsg = validateCandidateInput({ name, position, department, image: candidateImage });
+  if (errorMsg) return res.status(400).json({ message: errorMsg });
 
+  // Verify category exists if provided
+  if (categoryId) {
+    const categoryExists = await Category.findById(categoryId);
+    if (!categoryExists) return res.status(404).json({ message: "Category not found." });
+  }
 
-  // ✅ Validate input
-  if (!name || !position || !department || !image) {
-    return res.status(400).json({
-      message: "All fields (name, position, department, image) are required.",
+  // Prevent duplicate candidate
+  const existing = await Candidate.findOne({ name, position });
+  if (existing) {
+    return res.status(409).json({
+      message: `Candidate "${name}" already exists for "${position}".`,
     });
   }
 
-  // ✅ Optional: verify category exists
-  if (categoryId) {
-    const categoryExists = await Category.findById(categoryId);
-    if (!categoryExists) {
-      return res.status(404).json({ message: "Category not found." });
-    }
-  }
-
-  // ✅ Prevent duplicate candidate
-  const existing = await Candidate.findOne({ name, position });
-  if (existing) {
-    return res
-      .status(409)
-      .json({ message: `Candidate "${name}" already exists for "${position}".` });
-  }
-
-  // ✅ Create candidate
+  // Create candidate
   const candidate = await Candidate.create({
     name,
     position,
     department,
     categoryId: categoryId || null,
-    image: candidateImage, // ✅ use the Cloudinary URL
+    image: candidateImage,
   });
 
-
-  // ✅ Return plain object for frontend
   res.status(201).json(candidate);
 });
 
@@ -107,8 +104,6 @@ export const addCandidate = asyncHandler(async (req, res) => {
  */
 export const getCandidates = asyncHandler(async (req, res) => {
   const candidates = await Candidate.find().sort({ position: 1, name: 1 });
-
-  // ✅ Return an array only — not wrapped in { success: true }
   res.status(200).json(
     candidates.map((c) => ({
       _id: c._id,

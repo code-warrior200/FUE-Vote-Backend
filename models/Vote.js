@@ -2,33 +2,34 @@ import mongoose from "mongoose";
 
 const voteSchema = new mongoose.Schema(
   {
-    // ✅ Instead of ObjectId reference, use voter’s regnumber directly
+    // 🔹 Use voter’s registration number directly
     voterRegNumber: {
       type: String,
-      required: true,
+      required: [true, "Voter registration number is required"],
       trim: true,
+      uppercase: true, // normalize casing
     },
 
-    // Candidate they voted for
+    // 🔹 Candidate reference
     candidateId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Candidate",
-      required: true,
+      required: [true, "Candidate ID is required"],
     },
 
-    // Position of the candidate (President, Treasurer, etc.)
+    // 🔹 Candidate's position (e.g., President, Treasurer)
     position: {
       type: String,
-      required: true,
+      required: [true, "Position is required"],
       trim: true,
     },
   },
   {
-    timestamps: true,
+    timestamps: true, // adds createdAt and updatedAt
   }
 );
 
-// ✅ Prevent double voting: One vote per voter per position
+// 🔒 Prevent double voting: One vote per voter per position
 voteSchema.index({ voterRegNumber: 1, position: 1 }, { unique: true });
 
 const Vote = mongoose.model("Vote", voteSchema);
