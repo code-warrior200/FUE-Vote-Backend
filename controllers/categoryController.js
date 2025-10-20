@@ -1,10 +1,12 @@
 import Category from "../models/Category.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
-export const getCategory = async (req, res) => {
-  try {
-    const category = await category.find();
-    res.json(category);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
+/**
+ * @desc Get all categories
+ * @route GET /api/categories
+ * @access Public
+ */
+export const getCategory = asyncHandler(async (req, res) => {
+  const categories = await Category.find();
+  res.status(200).json(categories);
+});
