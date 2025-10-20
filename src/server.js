@@ -14,8 +14,6 @@ import adminRoute from "../routes/adminRoute.js";
 import voteRoutes from "../routes/voteRoute.js";
 import authRoutes from "../routes/authRoutes.js";
 
-
-
 // Middleware
 import { errorHandler } from "../middleware/errorMiddleware.js";
 
@@ -32,23 +30,6 @@ app.use(express.urlencoded({ extended: true }));
 // ✅ Swagger setup
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, { explorer: true }));
 
-// ✅ API Routes
-app.use("/api/auth", authRoutes);
-app.use("/api/categories", categoryRoutes);
-app.use("/api/candidates", candidateRoutes);
-app.use("/api/admin", adminRoute);
-//app.use("/api/admin", adminRoutes);
-app.use("/api/vote", voteRoutes);
-app.use("/api", adminRoutes);
-
-// ✅ 404 handler for unknown routes
-app.use((req, res) => {
-  res.status(404).json({ message: "Route not found" });
-});
-
-// ✅ Global error handler (must be after routes)
-app.use(errorHandler);
-
 // ✅ Create HTTP server & Socket.IO
 const server = http.createServer(app);
 
@@ -61,6 +42,30 @@ export const io = new Server(server, {
   },
 });
 
+// ✅ Attach io instance to every request
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
+
+// ✅ API Routes
+app.use("/api/auth", authRoutes);
+app.use("/api/categories", categoryRoutes);
+app.use("/api/candidates", candidateRoutes);
+app.use("/api/admin", adminRoute);
+// app.use("/api/admin", adminRoutes);
+app.use("/api/vote", voteRoutes);
+app.use("/api", adminRoutes);
+
+// ✅ 404 handler for unknown routes
+app.use((req, res) => {
+  res.status(404).json({ message: "Route not found" });
+});
+
+// ✅ Global error handler
+app.use(errorHandler);
+
+// ✅ Socket.IO connection events
 io.on("connection", (socket) => {
   console.log("🔌 Client connected:", socket.id);
   socket.on("disconnect", () => console.log("❌ Client disconnected:", socket.id));
