@@ -32,8 +32,7 @@ const candidateSchema = new mongoose.Schema(
   }
 );
 
-/** Optional: Index for faster queries by position */
-candidateSchema.index({ position: 1, name: 1 });
+
 
 const Candidate = mongoose.model("Candidate", candidateSchema);
 

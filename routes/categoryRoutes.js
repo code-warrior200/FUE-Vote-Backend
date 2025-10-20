@@ -88,4 +88,5 @@ router.post("/", (req, res) => {
   res.status(201).json({ message: "Category created" });
 });
 
+
 export default router;

@@ -6,23 +6,14 @@ const categorySchema = new mongoose.Schema(
       type: String,
       required: [true, "Category name is required"],
       trim: true,
-      unique: true, // optional: ensure no duplicate category names
     },
-    startDate: {
-      type: Date,
-      default: null,
-    },
-    endDate: {
-      type: Date,
-      default: null,
-    },
+    startDate: Date,
+    endDate: Date,
   },
-  {
-    timestamps: true, // adds createdAt and updatedAt
-  }
+  { timestamps: true }
 );
 
-/** Optional: Index for faster lookups by name */
+// ✅ Keep this only if you don't want the name to be unique
 categorySchema.index({ name: 1 });
 
 export default mongoose.model("Category", categorySchema);
