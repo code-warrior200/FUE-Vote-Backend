@@ -1,120 +1,80 @@
 import jwt from "jsonwebtoken";
-import bcrypt from "bcryptjs";
 import User from "../models/User.js";
 
+const SECRET_KEY = process.env.JWT_SECRET || "fallback_secret_key";
+
 /**
- * @desc    Generate JWT
+ * 🔐 Generate JWT for user
+ * Always encodes `_id`, `regnumber`, and `role`
  */
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: "7d", // token valid for 7 days
-  });
+const generateToken = (user) => {
+  return jwt.sign(
+    {
+      id: user._id, // Always use _id here
+      regnumber: user.regnumber,
+      role: user.role || "voter",
+    },
+    SECRET_KEY,
+    { expiresIn: "12h" } // adjust lifespan as needed
+  );
 };
 
 /**
- * @route   POST /api/auth/login
- * @desc    Authenticate user and get token
- * @access  Public
+ * ✅ Login user (example)
  */
 export const loginUser = async (req, res) => {
   try {
-    const { matricOrEmail, password } = req.body;
+    const { regnumber, password } = req.body;
 
-    if (!matricOrEmail || !password) {
-      return res.status(400).json({ message: "Please enter all fields." });
+    if (!regnumber || !password) {
+      return res.status(400).json({ message: "Reg number and password required" });
     }
 
-    // ✅ Find by matric number or email
-    const user = await User.findOne({
-      $or: [{ matricNo: matricOrEmail }, { email: matricOrEmail }],
-    });
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found." });
-    }
-
-    // ✅ Verify password
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(401).json({ message: "Invalid credentials." });
-    }
-
-    // ✅ Generate JWT
-    const token = generateToken(user._id);
-
-    // ✅ Save token in DB for session tracking
-    user.activeToken = token;
-    await user.save();
-
-    // ✅ Return consistent token key name: "token"
-    res.status(200).json({
-      success: true,
-      message: "Login successful",
-      token, // ✅ standardized key
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        matricNo: user.matricNo,
-        role: user.role,
-      },
-    });
-  } catch (err) {
-    console.error("❌ Login error:", err.message);
-    res.status(500).json({ message: "Server error. Please try again." });
-  }
-};
-
-/**
- * @route   POST /api/auth/logout
- * @desc    Logs out user by clearing active token
- * @access  Private
- */
-export const logoutUser = async (req, res) => {
-  try {
-    if (!req.user) {
-      return res.status(400).json({ message: "User not authenticated." });
-    }
-
-    req.user.activeToken = null;
-    await req.user.save();
-
-    res.status(200).json({ message: "Logged out successfully." });
-  } catch (err) {
-    console.error("❌ Logout error:", err.message);
-    res.status(500).json({ message: "Server error." });
-  }
-};
-
-/**
- * @route   GET /api/auth/verify
- * @desc    Verify token validity
- * @access  Private
- */
-export const verifyToken = async (req, res) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "No token provided" });
-  }
-
-  const token = authHeader.split(" ")[1];
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id).select("-password");
-
+    const user = await User.findOne({ regnumber });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    if (user.activeToken && user.activeToken !== token) {
-      return res.status(401).json({ message: "Session invalidated. Please log in again." });
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    res.status(200).json({ valid: true, user });
+    const token = generateToken(user);
+
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+      token,
+      user: {
+        _id: user._id,
+        regnumber: user.regnumber,
+        role: user.role,
+        name: user.name,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Login error:", error);
+    return res.status(500).json({ message: "Internal server error during login" });
+  }
+};
+
+/**
+ * ✅ (Optional) Token refresh endpoint
+ */
+export const refreshToken = async (req, res) => {
+  try {
+    const oldToken = req.headers.authorization?.split(" ")[1];
+    if (!oldToken) return res.status(401).json({ message: "No token provided" });
+
+    const decoded = jwt.verify(oldToken, SECRET_KEY);
+
+    // Reissue a new token with same info
+    const newToken = generateToken(decoded);
+
+    return res.status(200).json({ token: newToken });
   } catch (err) {
-    console.error("❌ Token verify error:", err.message);
-    res.status(401).json({ message: "Invalid or expired token" });
+    console.error("❌ Token refresh error:", err);
+    return res.status(401).json({ message: "Invalid or expired token" });
   }
 };
