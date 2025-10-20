@@ -6,6 +6,12 @@ const candidateSchema = new mongoose.Schema(
     department: { type: String, required: true },
     position: { type: String, required: true },
     image: { type: String },
+
+    // ✅ Add this field to support live vote count
+    totalVotes: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true }
 );

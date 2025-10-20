@@ -15,6 +15,12 @@ export const castVote = async (req, res) => {
     const voterRegNumber = req.user.regnumber;
     const { candidateId } = req.body;
 
+    // 🧾 Debug log (optional but useful)
+    console.log("🧾 Incoming vote request:", {
+      voterRegNumber,
+      candidateId,
+    });
+
     // ✅ Validate candidate ID
     if (!candidateId || !mongoose.Types.ObjectId.isValid(candidateId)) {
       return res.status(400).json({
@@ -62,8 +68,28 @@ export const castVote = async (req, res) => {
       message: `✅ Your vote for "${candidate.name}" as "${candidate.position}" has been recorded successfully.`,
       data: vote,
     });
+
   } catch (error) {
-    console.error("❌ Error casting vote:", error.stack || error);
+    console.error("❌ Error casting vote:", error);
+
+    // ✅ Handle MongoDB duplicate key (E11000)
+    if (error.code === 11000) {
+      const dupPosition = error.keyValue?.position || "this position";
+      return res.status(400).json({
+        success: false,
+        message: `You have already voted for ${dupPosition}.`,
+      });
+    }
+
+    // ✅ Handle Mongoose validation errors gracefully
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    // ❌ Fallback: Internal server error
     return res.status(500).json({
       success: false,
       message: "Internal server error while casting vote.",
@@ -116,4 +142,4 @@ export const getResults = async (req, res) => {
     console.error("❌ Error fetching results:", err);
     return res.status(500).json({ message: "Failed to fetch results." });
   } 
-};  
+};
