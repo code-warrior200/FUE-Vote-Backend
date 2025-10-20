@@ -1,14 +1,10 @@
-import Vote from "../models/Vote.js";
+import mongoose from "mongoose";
 import Candidate from "../models/Candidate.js";
-
-/**
- * @desc Cast a vote for a candidate
- * @route POST /api/vote
- * @access Private (voter only)
- */
+import Vote from "../models/Vote.js";
 
 export const castVote = async (req, res) => {
   try {
+    // ✅ Ensure authenticated user
     if (!req.user || !req.user._id) {
       return res.status(401).json({
         success: false,
@@ -19,6 +15,7 @@ export const castVote = async (req, res) => {
     const voterId = req.user._id;
     const { candidateId } = req.body;
 
+    // ✅ Validate candidate ID
     if (!candidateId || !mongoose.Types.ObjectId.isValid(candidateId)) {
       return res.status(400).json({
         success: false,
@@ -26,6 +23,7 @@ export const castVote = async (req, res) => {
       });
     }
 
+    // ✅ Ensure candidate exists
     const candidate = await Candidate.findById(candidateId);
     if (!candidate) {
       return res.status(404).json({
@@ -34,6 +32,7 @@ export const castVote = async (req, res) => {
       });
     }
 
+    // ✅ Prevent double voting
     const alreadyVoted = await Vote.findOne({
       voterId,
       position: candidate.position,
@@ -42,16 +41,20 @@ export const castVote = async (req, res) => {
     if (alreadyVoted) {
       return res.status(400).json({
         success: false,
-        message: `You have already voted for "${candidate.position}".`,
+        message: `You have already voted for the position of "${candidate.position}".`,
       });
     }
 
+    
+
+    // ✅ Record new vote
     const vote = await Vote.create({
       voterId,
       candidateId,
       position: candidate.position,
     });
 
+    // ✅ Increment candidate votes safely
     await Candidate.findByIdAndUpdate(candidateId, { $inc: { totalVotes: 1 } });
 
     return res.status(201).json({
@@ -60,7 +63,7 @@ export const castVote = async (req, res) => {
       data: vote,
     });
   } catch (error) {
-    console.error("❌ Error casting vote:", error);
+    console.error("❌ Error casting vote:", error.stack || error);
     return res.status(500).json({
       success: false,
       message: "Internal server error while casting vote.",
@@ -68,62 +71,43 @@ export const castVote = async (req, res) => {
   }
 };
 
+
+// Add at the bottom of voteController.js
+
 /**
- * @desc Reset all votes (admin only)
- * @route DELETE /api/admin/reset-all
- * @access Private (admin)
+ * 🧹 Reset all votes (Admin only)
  */
 export const resetAllVotes = async (req, res) => {
   try {
     await Vote.deleteMany({});
-    await Candidate.updateMany({}, { $set: { totalVotes: 0 } });
-
-    return res.status(200).json({
-      success: true,
-      message: "✅ All votes have been reset successfully.",
-    });
-  } catch (error) {
-    console.error("❌ Error resetting all votes:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error while resetting votes.",
-    });
+    await Candidate.updateMany({}, { totalVotes: 0 });
+    return res.status(200).json({ message: "✅ All votes have been reset." });
+  } catch (err) {
+    console.error("❌ Error resetting all votes:", err);
+    return res.status(500).json({ message: "Failed to reset votes." });
   }
 };
 
 /**
- * @desc Reset votes for a specific position (admin only)
- * @route POST /api/admin/reset
- * @access Private (admin)
+ * 🧹 Reset votes for a single position (optional)
  */
 export const resetVotes = async (req, res) => {
   try {
     const { position } = req.body;
-    if (!position) {
-      return res.status(400).json({
-        success: false,
-        message: "Position is required.",
-      });
-    }
+    if (!position)
+      return res.status(400).json({ message: "Position is required." });
 
-    // Delete votes for that position
-    await Vote.deleteMany({ position });
+    const candidates = await Candidate.find({ position });
+    const ids = candidates.map((c) => c._id);
 
-    // Reset candidate vote count for that position
-    await Candidate.updateMany(
-      { position },
-      { $set: { totalVotes: 0 } }
-    );
+    await Vote.deleteMany({ candidateId: { $in: ids } });
+    await Candidate.updateMany({ position }, { totalVotes: 0 });
 
     return res.status(200).json({
-      success: true,
-      message: `✅ Votes for the "${position}" position have been reset.`,
+      message: `✅ Votes for "${position}" have been reset.`,
     });
-  } catch (error) {
-    console.error("❌ Error resetting position votes:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error while resetting position votes.",
-    });
+  } catch (err) {
+    console.error("❌ Error resetting votes:", err);
+    return res.status(500).json({ message: "Failed to reset votes." });
   }
 };

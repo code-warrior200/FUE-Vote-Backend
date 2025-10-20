@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+
 const voteSchema = new mongoose.Schema(
   {
     voterId: {
