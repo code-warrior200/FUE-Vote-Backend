@@ -10,49 +10,47 @@ export const protect = (req, res, next) => {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      console.warn("⚠️ No Authorization header found");
       return res.status(401).json({ message: "No token provided" });
     }
 
     const token = authHeader.split(" ")[1];
 
-    try {
-    // JWT token directly includes regnumber
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = {
-      regnumber: decoded.regnumber,
-      role: decoded.role || "voter",
-    };
-    next();
-  } catch (err) {
-    return res.status(401).json({ message: "Invalid or expired token" });
-  }
-
-    // 🧪 Optional: Local development bypass for admin testing
+    // 🧪 Local admin bypass (for development/testing)
     if (token === "local-admin-token") {
+      console.log("🧪 Local admin bypass activated");
       req.user = {
-        _id: "local-admin",
-        username: "admin",
+        regnumber: "admin",
         role: "admin",
         devBypass: true,
       };
       return next();
     }
 
-    // ✅ Verify token
+    // ✅ Verify and decode token
     const decoded = jwt.verify(token, SECRET_KEY);
 
-    // ⚙️ Standardize field names to always include "_id"
+    // 🪵 Debug: show payload
+    console.log("🔍 Decoded JWT:", decoded);
+
+    // ✅ Fallback support (old tokens or missing regnumber)
+    const regnumber =
+      decoded.regnumber ||
+      decoded.username || // older schema
+      decoded.email || // fallback
+      null;
+
+    if (!regnumber) {
+      console.warn("⚠️ Missing regnumber in decoded token:", decoded);
+      return res.status(401).json({ message: "Invalid token payload (no regnumber)" });
+    }
+
     req.user = {
-      _id: decoded.id || decoded._id, // Always ensure this exists
-      id: decoded.id || decoded._id, // (kept for backward compatibility)
-      regnumber: decoded.regnumber,
+      regnumber,
       role: decoded.role || "voter",
     };
 
-    if (!req.user._id) {
-      return res.status(401).json({ message: "Invalid token payload" });
-    }
-
+    console.log(`✅ Authenticated as ${req.user.regnumber} (${req.user.role})`);
     next();
   } catch (err) {
     console.error("❌ Auth error:", err.message);
@@ -64,11 +62,13 @@ export const protect = (req, res, next) => {
  * ✅ Allows only voters to access
  */
 export const voterOnly = (req, res, next) => {
-  if (!req.user) {
+  if (!req.user || !req.user.regnumber) {
+    console.warn("⚠️ Access denied: Missing regnumber");
     return res.status(401).json({ message: "Access denied. Voters only." });
   }
 
-  if (req.user.role && req.user.role !== "voter") {
+  if (req.user.role !== "voter") {
+    console.warn(`⚠️ Access denied: Role '${req.user.role}' is not voter`);
     return res.status(403).json({ message: "Access denied. Voters only." });
   }
 
@@ -80,6 +80,7 @@ export const voterOnly = (req, res, next) => {
  */
 export const adminOnly = (req, res, next) => {
   if (!req.user || req.user.role !== "admin") {
+    console.warn("⚠️ Access denied: Admins only");
     return res.status(403).json({ message: "Access denied. Admins only." });
   }
   next();

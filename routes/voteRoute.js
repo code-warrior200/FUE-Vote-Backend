@@ -1,7 +1,6 @@
-// routes/voteRoutes.js
 import express from "express";
 import { castVote } from "../controllers/voteController.js";
-import {protect, voterOnly } from "../middleware/authMiddleware.js";
+import { protect, voterOnly } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
@@ -10,11 +9,19 @@ const router = express.Router();
  * @desc Cast a vote for a candidate
  * @access Private (authenticated voters only)
  */
-router.post("/", protect,voterOnly, async (req, res) => {
+router.post("/", protect, voterOnly, async (req, res) => {
   try {
+    if (!req.user?.regnumber) {
+      console.warn("⚠️ Missing regnumber in authenticated request");
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: voter regnumber missing in token",
+      });
+    }
+
+    console.log(`🗳️ Vote request by ${req.user.regnumber}`);
     const result = await castVote(req, res);
 
-    // In case controller handled the response already
     if (res.headersSent) return;
 
     return res.status(200).json({
