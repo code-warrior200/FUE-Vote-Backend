@@ -33,7 +33,7 @@ export const protect = (req, res, next) => {
     // 🪵 Debug: show payload
     console.log("🔍 Decoded JWT:", decoded);
 
-    // ✅ Fallback support (old tokens or missing regnumber)
+    // ✅ Determine regnumber (support old schemas or demo voters)
     const regnumber =
       decoded.regnumber ||
       decoded.username || // older schema
@@ -45,9 +45,11 @@ export const protect = (req, res, next) => {
       return res.status(401).json({ message: "Invalid token payload (no regnumber)" });
     }
 
+    // ✅ Attach user to request
     req.user = {
-      regnumber,
+      regnumber: regnumber.toUpperCase(), // normalize casing
       role: decoded.role || "voter",
+      isDemo: decoded.isDemo || false, // optional flag for demo voters
     };
 
     console.log(`✅ Authenticated as ${req.user.regnumber} (${req.user.role})`);
@@ -81,7 +83,7 @@ export const voterOnly = (req, res, next) => {
 export const adminOnly = (req, res, next) => {
   if (!req.user || req.user.role !== "admin") {
     console.warn("⚠️ Access denied: Admins only");
-    return res.status(403).json({ message: "Access denied. Admins only." });
+    return res.status(403).json({ message: "Access denied. Admins only" });
   }
   next();
 };
