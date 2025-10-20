@@ -2,16 +2,13 @@ import mongoose from "mongoose";
 import Candidate from "../models/Candidate.js";
 import Vote from "../models/Vote.js";
 
-/**
- * 🗳️ Cast a Vote
- */
 export const castVote = async (req, res) => {
   try {
     // ✅ Ensure authenticated voter
     if (!req.user || !req.user.regnumber) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized: voter not found.",
+        message: "Unauthorized: voter identity missing.",
       });
     }
 
@@ -26,7 +23,7 @@ export const castVote = async (req, res) => {
       });
     }
 
-    // ✅ Ensure candidate exists
+    // ✅ Find candidate
     const candidate = await Candidate.findById(candidateId);
     if (!candidate) {
       return res.status(404).json({
@@ -35,7 +32,7 @@ export const castVote = async (req, res) => {
       });
     }
 
-    // ✅ Prevent double voting (one vote per position)
+    // ✅ Prevent double voting for same position
     const alreadyVoted = await Vote.findOne({
       voterRegNumber,
       position: candidate.position,
@@ -55,8 +52,10 @@ export const castVote = async (req, res) => {
       position: candidate.position,
     });
 
-    // ✅ Increment candidate votes safely
+    // ✅ Safely increment candidate votes
     await Candidate.findByIdAndUpdate(candidateId, { $inc: { totalVotes: 1 } });
+
+    console.log(`🗳️ ${voterRegNumber} voted for ${candidate.name} (${candidate.position})`);
 
     return res.status(201).json({
       success: true,
@@ -72,9 +71,7 @@ export const castVote = async (req, res) => {
   }
 };
 
-/**
- * 🧹 Reset all votes (Admin only)
- */
+// 🧹 Reset all votes (Admin only)
 export const resetAllVotes = async (req, res) => {
   try {
     await Vote.deleteMany({});
@@ -86,9 +83,7 @@ export const resetAllVotes = async (req, res) => {
   }
 };
 
-/**
- * 🧹 Reset votes for a specific position
- */
+// 🧹 Reset votes for one position
 export const resetVotes = async (req, res) => {
   try {
     const { position } = req.body;
