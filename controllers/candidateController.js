@@ -1,25 +1,27 @@
-import Candidate from "../models/Candidate.js";
-import { asyncHandler } from "../middleware/asyncHandler.js";
+// controllers/candidateController.js
+import Candidate from "../models/Candidate.js"; // adjust path to your model if needed
 
-/**
- * @desc Get all candidates grouped by position
- * @route GET /api/candidates
- * @access Public or protected (depending on middleware)
- */
-export const getAllCandidates = asyncHandler(async (req, res) => {
-  // Get all distinct positions
-  const positions = await Candidate.distinct("position");
+export const getAllCandidates = async (req, res) => {
+  try {
+    const candidates = await Candidate.find(); // or however you're fetching from DB
 
-  // Fetch candidates for each position concurrently
-  const candidatesByPosition = await Promise.all(
-    positions.map(async (position) => {
-      const candidates = await Candidate.find({ position }).sort({ name: 1 });
-      return [position, candidates];
-    })
-  );
+    if (!candidates || candidates.length === 0) {
+      return res.status(404).json([]); // ✅ return an empty array (not an object)
+    }
 
-  // Convert array of [position, candidates] into an object
-  const result = Object.fromEntries(candidatesByPosition);
+    // ✅ Always return a plain array
+    const formatted = candidates.map((c) => ({
+      id: c._id,
+      name: c.name,
+      dept: c.department,
+      image: c.photoUrl || c.image || "",
+      position: c.position,
+      votes: c.votes || 0,
+    }));
 
-  res.status(200).json(result);
-});
+    return res.status(200).json(formatted);
+  } catch (error) {
+    console.error("Error fetching candidates:", error);
+    res.status(500).json({ message: "Server error fetching candidates" });
+  }
+};
