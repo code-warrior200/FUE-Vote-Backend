@@ -33,16 +33,86 @@ const emitVoteEvent = (io, candidate, isDemo = false) => {
 };
 
 /**
- * Cast a vote
+ * Cast one or multiple votes
+ * Supports:
+ *  - Single vote { candidateId }
+ *  - Multiple votes { votes: [ { position, candidateId } ] }
  */
 export const castVote = asyncHandler(async (req, res) => {
-  const { candidateId } = req.body;
   const voterRegNumber = req.user?.regnumber;
   const isDemo = req.user?.isDemo || false;
   const io = req.io;
 
-  if (!voterRegNumber) return res.status(401).json({ success: false, message: "Unauthorized: voter identity missing." });
-  if (!candidateId || !isValidObjectId(candidateId)) return res.status(400).json({ success: false, message: "Invalid or missing candidate ID." });
+  if (!voterRegNumber) {
+    return res.status(401).json({ success: false, message: "Unauthorized: voter identity missing." });
+  }
+
+  const { candidateId, votes } = req.body;
+
+  // ✅ Handle multiple votes
+  if (Array.isArray(votes)) {
+    const results = [];
+
+    for (const { position, candidateId } of votes) {
+      if (!candidateId || !isValidObjectId(candidateId)) {
+        results.push({ position, status: "error", message: "Invalid or missing candidateId." });
+        continue;
+      }
+
+      const candidate = await Candidate.findById(candidateId);
+      if (!candidate) {
+        results.push({ position, status: "error", message: "Candidate not found." });
+        continue;
+      }
+
+      if (isDemo) {
+        try {
+          recordDemoVote(voterRegNumber, candidate);
+          emitVoteEvent(io, candidate, true);
+          results.push({
+            position: candidate.position,
+            status: "success",
+            message: `✅ Your vote for "${candidate.name}" as "${candidate.position}" has been recorded (demo mode).`,
+          });
+        } catch (error) {
+          results.push({ position: candidate.position, status: "skipped", message: error.message });
+        }
+        continue;
+      }
+
+      // ✅ Real mode: prevent double voting
+      const alreadyVoted = await Vote.findOne({ voterRegNumber, position: candidate.position });
+      if (alreadyVoted) {
+        results.push({
+          position: candidate.position,
+          status: "skipped",
+          message: `You have already voted for "${candidate.position}".`,
+        });
+        continue;
+      }
+
+      await Vote.create({ voterRegNumber, candidateId, position: candidate.position });
+      await Candidate.findByIdAndUpdate(candidateId, { $inc: { totalVotes: 1 } });
+      emitVoteEvent(io, candidate, false);
+
+      results.push({
+        position: candidate.position,
+        status: "success",
+        message: `✅ Your vote for "${candidate.name}" as "${candidate.position}" has been recorded successfully.`,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Vote submission complete.",
+      results,
+    });
+  }
+
+  // ✅ Handle single vote (legacy)
+  if (!candidateId || !isValidObjectId(candidateId)) {
+    return res.status(400).json({ success: false, message: "Invalid or missing candidate ID." });
+  }
 
   const candidate = await Candidate.findById(candidateId);
   if (!candidate) return res.status(404).json({ success: false, message: "Candidate not found." });
@@ -62,9 +132,13 @@ export const castVote = asyncHandler(async (req, res) => {
     }
   }
 
-  // Real vote: prevent double voting
+  // ✅ Real vote: prevent double voting
   const alreadyVoted = await Vote.findOne({ voterRegNumber, position: candidate.position });
-  if (alreadyVoted) return res.status(400).json({ success: false, message: `You have already voted for the position of "${candidate.position}".` });
+  if (alreadyVoted)
+    return res.status(400).json({
+      success: false,
+      message: `You have already voted for the position of "${candidate.position}".`,
+    });
 
   const vote = await Vote.create({ voterRegNumber, candidateId, position: candidate.position });
   await Candidate.findByIdAndUpdate(candidateId, { $inc: { totalVotes: 1 } });
