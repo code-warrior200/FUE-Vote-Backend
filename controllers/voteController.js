@@ -3,16 +3,17 @@ import Candidate from "../models/Candidate.js";
 import Vote from "../models/Vote.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
-// In-memory storage for demo votes
+// 🧠 In-memory demo vote tracking
 const demoVotes = {}; // { voterRegNumber: { position: candidateId } }
 const demoCandidateVotes = {}; // { candidateId: totalVotes }
 
-/** Utility: Validate ObjectId */
+/** 🧩 Validate MongoDB ObjectId */
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
-/** Utility: Record a demo vote */
+/** 🧠 Record a demo vote */
 const recordDemoVote = (voterRegNumber, candidate) => {
   if (!demoVotes[voterRegNumber]) demoVotes[voterRegNumber] = {};
+
   if (demoVotes[voterRegNumber][candidate.position]) {
     throw new Error(`You have already voted for "${candidate.position}" (demo mode).`);
   }
@@ -27,15 +28,21 @@ const recordDemoVote = (voterRegNumber, candidate) => {
   };
 };
 
-/** Utility: Emit vote event via Socket.IO */
+/** 📡 Emit Socket.IO vote event */
 const emitVoteEvent = (io, candidate, isDemo = false) => {
-  if (io) io.emit("vote_cast", { candidateId: candidate._id, position: candidate.position, isDemo });
+  if (io) {
+    io.emit("vote_cast", {
+      candidateId: candidate._id,
+      position: candidate.position,
+      isDemo,
+    });
+  }
 };
 
 /**
- * Cast one or multiple votes
+ * 🗳️ Cast one or multiple votes
  * Supports:
- *  - Single vote { candidateId }
+ *  - Single vote { candidateId, position }
  *  - Multiple votes { votes: [ { position, candidateId } ] }
  */
 export const castVote = asyncHandler(async (req, res) => {
@@ -44,10 +51,12 @@ export const castVote = asyncHandler(async (req, res) => {
   const io = req.io;
 
   if (!voterRegNumber) {
-    return res.status(401).json({ success: false, message: "Unauthorized: voter identity missing." });
+    return res
+      .status(401)
+      .json({ success: false, message: "Unauthorized: voter identity missing." });
   }
 
-  const { candidateId, votes } = req.body;
+  const { candidateId, position, votes } = req.body;
 
   // ✅ Handle multiple votes
   if (Array.isArray(votes)) {
@@ -55,7 +64,7 @@ export const castVote = asyncHandler(async (req, res) => {
 
     for (const { position, candidateId } of votes) {
       if (!candidateId || !isValidObjectId(candidateId)) {
-        results.push({ position, status: "error", message: "Invalid or missing candidateId." });
+        results.push({ position, status: "error", message: "Invalid or missing candidate ID." });
         continue;
       }
 
@@ -65,41 +74,39 @@ export const castVote = asyncHandler(async (req, res) => {
         continue;
       }
 
-      if (isDemo) {
-        try {
+      try {
+        if (isDemo) {
           recordDemoVote(voterRegNumber, candidate);
-          emitVoteEvent(io, candidate, true);
-          results.push({
-            position: candidate.position,
-            status: "success",
-            message: `✅ Your vote for "${candidate.name}" as "${candidate.position}" has been recorded (demo mode).`,
-          });
-        } catch (error) {
-          results.push({ position: candidate.position, status: "skipped", message: error.message });
-        }
-        continue;
-      }
+        } else {
+          const alreadyVoted = await Vote.findOne({ voterRegNumber, position: candidate.position });
+          if (alreadyVoted) {
+            results.push({
+              position: candidate.position,
+              status: "skipped",
+              message: `You have already voted for "${candidate.position}".`,
+            });
+            continue;
+          }
 
-      // ✅ Real mode: prevent double voting
-      const alreadyVoted = await Vote.findOne({ voterRegNumber, position: candidate.position });
-      if (alreadyVoted) {
+          await Vote.create({ voterRegNumber, candidateId, position: candidate.position });
+          await Candidate.findByIdAndUpdate(candidateId, { $inc: { totalVotes: 1 } });
+        }
+
+        emitVoteEvent(io, candidate, isDemo);
         results.push({
           position: candidate.position,
-          status: "skipped",
-          message: `You have already voted for "${candidate.position}".`,
+          status: "success",
+          message: `✅ Your vote for "${candidate.name}" as "${candidate.position}" has been recorded ${
+            isDemo ? "(demo mode)" : "successfully"
+          }.`,
         });
-        continue;
+      } catch (error) {
+        results.push({
+          position: candidate.position,
+          status: "error",
+          message: error.message || "Vote failed.",
+        });
       }
-
-      await Vote.create({ voterRegNumber, candidateId, position: candidate.position });
-      await Candidate.findByIdAndUpdate(candidateId, { $inc: { totalVotes: 1 } });
-      emitVoteEvent(io, candidate, false);
-
-      results.push({
-        position: candidate.position,
-        status: "success",
-        message: `✅ Your vote for "${candidate.name}" as "${candidate.position}" has been recorded successfully.`,
-      });
     }
 
     return res.status(200).json({
@@ -109,68 +116,73 @@ export const castVote = asyncHandler(async (req, res) => {
     });
   }
 
-  // ✅ Handle single vote (legacy)
+  // ✅ Handle single vote
   if (!candidateId || !isValidObjectId(candidateId)) {
     return res.status(400).json({ success: false, message: "Invalid or missing candidate ID." });
   }
 
   const candidate = await Candidate.findById(candidateId);
-  if (!candidate) return res.status(404).json({ success: false, message: "Candidate not found." });
+  if (!candidate)
+    return res.status(404).json({ success: false, message: "Candidate not found." });
 
-  if (isDemo) {
-    try {
+  try {
+    if (isDemo) {
       const demoData = recordDemoVote(voterRegNumber, candidate);
       emitVoteEvent(io, candidate, true);
-
       return res.status(201).json({
         success: true,
         message: `✅ Your vote for "${candidate.name}" as "${candidate.position}" has been recorded (demo mode).`,
         data: demoData,
       });
-    } catch (error) {
-      return res.status(400).json({ success: false, message: error.message });
     }
-  }
 
-  // ✅ Real vote: prevent double voting
-  const alreadyVoted = await Vote.findOne({ voterRegNumber, position: candidate.position });
-  if (alreadyVoted)
-    return res.status(400).json({
-      success: false,
-      message: `You have already voted for the position of "${candidate.position}".`,
+    const alreadyVoted = await Vote.findOne({ voterRegNumber, position: candidate.position });
+    if (alreadyVoted) {
+      return res.status(400).json({
+        success: false,
+        message: `You have already voted for the position of "${candidate.position}".`,
+      });
+    }
+
+    const vote = await Vote.create({ voterRegNumber, candidateId, position: candidate.position });
+    await Candidate.findByIdAndUpdate(candidateId, { $inc: { totalVotes: 1 } });
+    emitVoteEvent(io, candidate, false);
+
+    return res.status(201).json({
+      success: true,
+      message: `✅ Your vote for "${candidate.name}" as "${candidate.position}" has been recorded successfully.`,
+      data: vote,
     });
-
-  const vote = await Vote.create({ voterRegNumber, candidateId, position: candidate.position });
-  await Candidate.findByIdAndUpdate(candidateId, { $inc: { totalVotes: 1 } });
-  emitVoteEvent(io, candidate, false);
-
-  return res.status(201).json({
-    success: true,
-    message: `✅ Your vote for "${candidate.name}" as "${candidate.position}" has been recorded successfully.`,
-    data: vote,
-  });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Vote submission failed.",
+    });
+  }
 });
 
 /**
- * Reset all votes (Admin)
+ * 🧹 Reset all votes (Admin only)
  */
 export const resetAllVotes = asyncHandler(async (req, res) => {
   await Vote.deleteMany({});
   await Candidate.updateMany({}, { totalVotes: 0 });
 
   // Clear demo votes
-  Object.keys(demoVotes).forEach((k) => delete demoVotes[k]);
-  Object.keys(demoCandidateVotes).forEach((k) => delete demoCandidateVotes[k]);
+  Object.keys(demoVotes).forEach((v) => delete demoVotes[v]);
+  Object.keys(demoCandidateVotes).forEach((c) => delete demoCandidateVotes[c]);
 
-  res.status(200).json({ message: "✅ All votes have been reset." });
+  res.status(200).json({ success: true, message: "✅ All votes have been reset." });
 });
 
 /**
- * Reset votes for a specific position
+ * 🧼 Reset votes for a specific position
  */
 export const resetVotes = asyncHandler(async (req, res) => {
   const { position } = req.body;
-  if (!position) return res.status(400).json({ message: "Position is required." });
+  if (!position) {
+    return res.status(400).json({ success: false, message: "Position is required." });
+  }
 
   const candidates = await Candidate.find({ position });
   const ids = candidates.map((c) => c._id);
@@ -179,17 +191,22 @@ export const resetVotes = asyncHandler(async (req, res) => {
   await Candidate.updateMany({ position }, { totalVotes: 0 });
 
   // Clear demo votes for this position
-  Object.keys(demoVotes).forEach((voter) => delete demoVotes[voter][position]);
+  for (const voter in demoVotes) {
+    if (demoVotes[voter][position]) delete demoVotes[voter][position];
+  }
 
-  res.status(200).json({ message: `✅ Votes for "${position}" have been reset.` });
+  res.status(200).json({
+    success: true,
+    message: `✅ Votes for "${position}" have been reset.`,
+  });
 });
 
 /**
- * Get voting results
+ * 📊 Get voting results
  */
 export const getResults = asyncHandler(async (req, res) => {
   const candidates = await Candidate.find({})
-    .select("name position totalVotes -_id")
+    .select("name position totalVotes")
     .sort({ position: 1, totalVotes: -1 });
 
   const results = candidates.map((c) => ({
@@ -198,5 +215,5 @@ export const getResults = asyncHandler(async (req, res) => {
     totalVotes: c.totalVotes + (demoCandidateVotes[c._id] || 0),
   }));
 
-  res.status(200).json({ results });
+  res.status(200).json({ success: true, results });
 });
