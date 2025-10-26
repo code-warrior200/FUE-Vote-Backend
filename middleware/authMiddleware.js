@@ -1,30 +1,51 @@
 import jwt from "jsonwebtoken";
+import { voters } from "../controllers/adminController.js"; // 🧠 Import local in-memory voters
 
 const SECRET_KEY = process.env.JWT_SECRET || "fallback_secret_key";
 
-/** 🔐 Protect middleware — verifies JWT for authenticated users */
+/**
+ * 🔐 Universal Auth Middleware
+ * Supports:
+ *  - Bearer JWT token (real voters & admins)
+ *  - x-voter-id header (local/in-memory demo voters)
+ *  - Local admin bypass (for development/testing)
+ */
 export const protect = (req, res, next) => {
   const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    console.warn("⚠️ No Authorization header found");
-    return res.status(401).json({ message: "No token provided" });
-  }
-
-  const token = authHeader.split(" ")[1];
-
-  // 🧪 Local admin bypass for dev/testing
-  if (token === "local-admin-token") {
-    console.log("🧪 Local admin bypass activated");
-    req.user = { regnumber: "ADMIN", role: "admin", devBypass: true };
-    return next();
-  }
+  const localVoterId = req.headers["x-voter-id"];
 
   try {
-    const decoded = jwt.verify(token, SECRET_KEY);
-    console.log("🔍 Decoded JWT:", decoded);
+    /** 🧪 1️⃣ Local voter (in-memory) */
+    if (localVoterId) {
+      const voter = voters.find(v => v.regnumber === localVoterId);
+      if (!voter) {
+        console.warn(`⚠️ Invalid local voter ID: ${localVoterId}`);
+        return res.status(401).json({ message: "Invalid local voter ID." });
+      }
+      req.user = voter;
+      console.log(`🧠 Authenticated as local voter: ${voter.regnumber}`);
+      return next();
+    }
 
+    /** 🔑 2️⃣ JWT-based authentication */
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      console.warn("⚠️ No Authorization header or Bearer token found");
+      return res.status(401).json({ message: "No token provided" });
+    }
+
+    const token = authHeader.split(" ")[1];
+
+    /** 🧪 3️⃣ Local admin bypass (for dev/testing) */
+    if (token === "local-admin-token") {
+      console.log("🧪 Local admin bypass activated");
+      req.user = { regnumber: "ADMIN", role: "admin", devBypass: true };
+      return next();
+    }
+
+    /** 🧩 4️⃣ Verify and decode JWT */
+    const decoded = jwt.verify(token, SECRET_KEY);
     const regnumber = (decoded.regnumber || decoded.username || decoded.email)?.toUpperCase();
+
     if (!regnumber) {
       console.warn("⚠️ Missing regnumber in decoded token:", decoded);
       return res.status(401).json({ message: "Invalid token payload (no regnumber)" });
@@ -36,10 +57,10 @@ export const protect = (req, res, next) => {
       isDemo: decoded.isDemo || false,
     };
 
-    console.log(`✅ Authenticated as ${req.user.regnumber} (${req.user.role})`);
+    console.log(`✅ Authenticated via JWT: ${req.user.regnumber} (${req.user.role})`);
     next();
   } catch (err) {
-    console.error("❌ Auth error:", err.message);
+    console.error("❌ Authentication error:", err.message);
     return res.status(401).json({ message: "Invalid or expired token" });
   }
 };

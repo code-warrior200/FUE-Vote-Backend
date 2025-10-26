@@ -3,7 +3,14 @@ import Candidate from "../models/Candidate.js";
 import Vote from "../models/Vote.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
-/** Utility: Validate required candidate fields */
+/** 🧠 In-memory voter store (for demo or local testing) */
+export const voters = [
+  { regnumber: "VOTE001", name: "John Doe", role: "voter", isDemo: true },
+  { regnumber: "VOTE002", name: "Jane Smith", role: "voter", isDemo: true },
+  { regnumber: "ADMIN001", name: "System Admin", role: "admin", isDemo: true },
+];
+
+/** 🧩 Utility: Validate required candidate fields */
 const validateCandidateInput = ({ name, position, department, image }) => {
   if (!name || !position || !department || !image) {
     return "All fields (name, position, department, image) are required.";
@@ -11,14 +18,14 @@ const validateCandidateInput = ({ name, position, department, image }) => {
   return null;
 };
 
-/** Utility: Build candidate summary with vote count */
+/** 🧮 Utility: Build candidate summary with vote count */
 const buildCandidateSummary = async (candidate) => ({
   candidateName: candidate.name,
   department: candidate.department,
   totalVotes: await Vote.countDocuments({ candidateId: candidate._id }),
 });
 
-/** Utility: Build category summary */
+/** 📊 Utility: Build category summary */
 const buildCategorySummary = async (category) => {
   const candidates = await Candidate.find({ categoryId: category._id });
   const results = await Promise.all(candidates.map(buildCandidateSummary));
@@ -64,20 +71,16 @@ export const getVoteSummary = asyncHandler(async (req, res) => {
 export const addCandidate = asyncHandler(async (req, res) => {
   const { name, position, department, categoryId, image } = req.body;
 
-  // Use image URL from frontend (Cloudinary) if available
   const candidateImage = image?.trim() || (req.file ? `/uploads/${req.file.filename}` : "");
 
-  // Validate input
   const errorMsg = validateCandidateInput({ name, position, department, image: candidateImage });
   if (errorMsg) return res.status(400).json({ message: errorMsg });
 
-  // Verify category exists if provided
   if (categoryId) {
     const categoryExists = await Category.findById(categoryId);
     if (!categoryExists) return res.status(404).json({ message: "Category not found." });
   }
 
-  // Prevent duplicate candidate
   const existing = await Candidate.findOne({ name, position });
   if (existing) {
     return res.status(409).json({
@@ -85,7 +88,6 @@ export const addCandidate = asyncHandler(async (req, res) => {
     });
   }
 
-  // Create candidate
   const candidate = await Candidate.create({
     name,
     position,
