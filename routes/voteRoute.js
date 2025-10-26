@@ -20,8 +20,11 @@ export const swaggerVoteRoutes = {
     post: {
       summary: "Cast one or multiple votes",
       description:
-        "Allows an authenticated voter to cast one or multiple votes for candidates. \
-Supports both single vote submission (`candidateId`) and batch submission (`votes` array).",
+        "Allows an authenticated voter to cast one or multiple votes for candidates.\n\n" +
+        "Supports:\n" +
+        " - **Single vote mode:** `{ candidateId, position }`\n" +
+        " - **Batch vote mode:** `{ votes: [ { position, candidateId } ] }`\n\n" +
+        "All votes are automatically linked to the authenticated voter's registration number.",
       tags: ["Votes"],
       security: [{ bearerAuth: [] }],
       requestBody: {
@@ -38,8 +41,13 @@ Supports both single vote submission (`candidateId`) and batch submission (`vote
                       example: "67162a1f9c8c123456789abc",
                       description: "ID of the candidate being voted for (single-vote mode).",
                     },
+                    position: {
+                      type: "string",
+                      example: "President",
+                      description: "Position being voted for.",
+                    },
                   },
-                  required: ["candidateId"],
+                  required: ["candidateId", "position"],
                 },
                 {
                   type: "object",
@@ -73,8 +81,33 @@ Supports both single vote submission (`candidateId`) and batch submission (`vote
         },
       },
       responses: {
+        201: {
+          description: "Vote successfully recorded.",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean", example: true },
+                  message: {
+                    type: "string",
+                    example: "✅ Your vote for 'John Doe' as 'President' has been recorded successfully.",
+                  },
+                  data: {
+                    type: "object",
+                    properties: {
+                      voterRegNumber: { type: "string", example: "FUE/ICT/001" },
+                      candidateId: { type: "string", example: "67162a1f9c8c123456789abc" },
+                      position: { type: "string", example: "President" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
         200: {
-          description: "Vote(s) submitted successfully.",
+          description: "Batch vote submission completed (multi-vote mode).",
           content: {
             "application/json": {
               schema: {
@@ -84,7 +117,6 @@ Supports both single vote submission (`candidateId`) and batch submission (`vote
                   message: { type: "string", example: "Vote submission complete." },
                   results: {
                     type: "array",
-                    description: "Details of each vote processed (only for multi-vote mode).",
                     items: {
                       type: "object",
                       properties: {
@@ -102,7 +134,20 @@ Supports both single vote submission (`candidateId`) and batch submission (`vote
             },
           },
         },
-        400: { description: "Bad request — invalid data or duplicate vote." },
+        400: {
+          description: "Bad request — invalid or duplicate vote.",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean", example: false },
+                  message: { type: "string", example: "You have already voted for 'President'." },
+                },
+              },
+            },
+          },
+        },
         401: { description: "Unauthorized — invalid or missing token." },
         403: { description: "Forbidden — voter privileges required." },
         500: { description: "Internal server error." },
@@ -115,7 +160,7 @@ Supports both single vote submission (`candidateId`) and batch submission (`vote
 
 /**
  * @route POST /api/vote
- * @desc Cast a vote for a candidate
+ * @desc Cast a vote for a candidate (single or multiple)
  * @access Private (authenticated voters only)
  */
 router.post("/", protect, voterOnly, castVote);
