@@ -25,7 +25,7 @@ const voteSchema = new mongoose.Schema(
 // ✅ Remove the unique restriction
 // This means many voters can vote for same position & candidate freely
 // (each voter’s regNumber is independent)
-voteSchema.index({ voterRegNumber: 1, position: 1 }); // no "unique: true"
+//voteSchema.index({ voterRegNumber: 1, position: 1 }); // no "unique: true"
 
 const Vote = mongoose.model("Vote", voteSchema);
 export default Vote;
