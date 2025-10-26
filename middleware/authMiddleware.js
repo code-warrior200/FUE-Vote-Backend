@@ -1,5 +1,14 @@
 import jwt from "jsonwebtoken";
-import { voters } from "../controllers/adminController.js"; // 🧠 Import local in-memory voters
+
+// 🧠 Safe import of local voters (if defined)
+let voters = [];
+try {
+  const controller = await import("../controllers/adminController.js");
+  voters = controller.voters || [];
+  console.log(`✅ Loaded ${voters.length} local in-memory voters.`);
+} catch (err) {
+  console.warn("⚠️ No local voters found in adminController.js — continuing without local mode.");
+}
 
 const SECRET_KEY = process.env.JWT_SECRET || "fallback_secret_key";
 
