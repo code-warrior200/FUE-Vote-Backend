@@ -3,27 +3,26 @@ import Candidate from "../models/Candidate.js";
 import Vote from "../models/Vote.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
-// 🧠 In-memory demo vote tracking
-const demoVotes = {}; // { voterRegNumber: candidateId }
+// 🧠 In-memory demo vote tracking (for demo mode only)
+const demoVotes = {}; // { voterRegNumber: { position: candidateId } }
 const demoCandidateVotes = {}; // { candidateId: totalVotes }
 
 /** 🧩 Validate MongoDB ObjectId */
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
-/** 🧠 Record a demo vote (only once total) */
+/** 🧠 Record a demo vote (only once per position) */
 const recordDemoVote = (voterRegNumber, candidate) => {
-  if (demoVotes[voterRegNumber]) {
-    throw new Error(`You have already voted for a candidate (demo mode).`);
+  const position = candidate.position;
+  demoVotes[voterRegNumber] = demoVotes[voterRegNumber] || {};
+
+  if (demoVotes[voterRegNumber][position]) {
+    throw new Error(`You have already voted for ${position} (demo mode).`);
   }
 
-  demoVotes[voterRegNumber] = candidate._id;
+  demoVotes[voterRegNumber][position] = candidate._id;
   demoCandidateVotes[candidate._id] = (demoCandidateVotes[candidate._id] || 0) + 1;
 
-  return {
-    voterRegNumber,
-    candidateId: candidate._id,
-    position: candidate.position,
-  };
+  return { voterRegNumber, candidateId: candidate._id, position };
 };
 
 /** 📡 Emit Socket.IO vote event */
@@ -39,49 +38,51 @@ const emitVoteEvent = (io, candidate, isDemo = false) => {
 
 /** 🛠️ Process a single vote */
 const processVote = async ({ voterRegNumber, candidate, isDemo, io }) => {
+  const position = candidate.position;
+
   try {
     if (isDemo) {
       recordDemoVote(voterRegNumber, candidate);
     } else {
-      // ✅ Check if voter already voted for ANY candidate
-      const alreadyVoted = await Vote.findOne({ voterRegNumber });
+      // ✅ Check if voter already voted for this *position*
+      const alreadyVoted = await Vote.findOne({ voterRegNumber, position });
       if (alreadyVoted) {
         return {
-          position: candidate.position,
-          status: "skipped",
-          message: "You have already voted for a candidate.",
+          position,
+          status: "error",
+          message: `You have already voted for ${position}.`,
         };
       }
 
       await Vote.create({
         voterRegNumber,
         candidateId: candidate._id,
-        position: candidate.position,
+        position,
       });
+
       await Candidate.findByIdAndUpdate(candidate._id, { $inc: { totalVotes: 1 } });
     }
 
     emitVoteEvent(io, candidate, isDemo);
 
     return {
-      position: candidate.position,
+      position,
       status: "success",
-      message: `✅ Your vote for "${candidate.name}" as "${candidate.position}" has been recorded ${
+      message: `✅ Your vote for "${candidate.name}" as "${position}" has been recorded ${
         isDemo ? "(demo mode)" : "successfully"
       }.`,
     };
   } catch (error) {
-    // Graceful duplicate key error
     if (error.code === 11000) {
       return {
-        position: candidate.position,
+        position,
         status: "error",
-        message: "You have already voted for a candidate.",
+        message: `You have already voted for ${position}.`,
       };
     }
 
     return {
-      position: candidate.position,
+      position,
       status: "error",
       message: error.message || "Vote failed.",
     };
@@ -104,42 +105,29 @@ export const castVote = asyncHandler(async (req, res) => {
 
   const { candidateId, votes } = req.body;
 
-  // ✅ Check globally if this voter has already voted
-  const alreadyVoted = await Vote.findOne({ voterRegNumber });
-  if (alreadyVoted) {
-    return res.status(400).json({
-      success: false,
-      message: "You have already voted for a candidate.",
-    });
-  }
-
-  // Multi-vote submission (e.g. from summary page)
+  // 🗳️ Multiple votes (array)
   if (Array.isArray(votes) && votes.length > 0) {
-    const first = votes[0];
-    const validId = first?.candidateId;
+    const results = [];
 
-    if (!validId || !isValidObjectId(validId)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid or missing candidate ID." });
+    for (const v of votes) {
+      const validId = v?.candidateId;
+      if (!validId || !isValidObjectId(validId)) continue;
+
+      const candidate = await Candidate.findById(validId);
+      if (!candidate) continue;
+
+      const result = await processVote({ voterRegNumber, candidate, isDemo, io });
+      results.push(result);
     }
 
-    const candidate = await Candidate.findById(validId);
-    if (!candidate) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Candidate not found." });
-    }
-
-    const result = await processVote({ voterRegNumber, candidate, isDemo, io });
-    const statusCode = result.status === "success" ? 201 : 400;
-    return res.status(statusCode).json({
-      success: result.status === "success",
-      message: result.message,
+    const hasError = results.some((r) => r.status !== "success");
+    return res.status(hasError ? 400 : 201).json({
+      success: !hasError,
+      results,
     });
   }
 
-  // Single vote submission
+  // 🗳️ Single vote
   if (!candidateId || !isValidObjectId(candidateId)) {
     return res
       .status(400)
@@ -155,9 +143,10 @@ export const castVote = asyncHandler(async (req, res) => {
 
   const result = await processVote({ voterRegNumber, candidate, isDemo, io });
   const statusCode = result.status === "success" ? 201 : 400;
-  return res
-    .status(statusCode)
-    .json({ success: result.status === "success", ...result });
+  return res.status(statusCode).json({
+    success: result.status === "success",
+    message: result.message,
+  });
 });
 
 /**
@@ -190,7 +179,7 @@ export const resetVotes = asyncHandler(async (req, res) => {
   await Candidate.updateMany({ position }, { totalVotes: 0 });
 
   for (const voter in demoVotes) {
-    if (demoVotes[voter]) delete demoVotes[voter];
+    if (demoVotes[voter]?.[position]) delete demoVotes[voter][position];
   }
 
   res
