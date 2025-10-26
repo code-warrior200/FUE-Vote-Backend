@@ -5,10 +5,17 @@ import { asyncHandler } from "../middleware/asyncHandler.js";
 
 /** 🧠 In-memory voter store (for demo or local testing) */
 export const voters = [
-  { regnumber: "VOTE001", name: "John Doe", role: "voter", isDemo: true },
-  { regnumber: "VOTE002", name: "Jane Smith", role: "voter", isDemo: true },
-  { regnumber: "ADMIN001", name: "System Admin", role: "admin", isDemo: true },
-];
+  "EZ/CSC1001/2025",
+  "EZ/CSC1002/2025",
+  "EZ/MTH1003/2025",
+  "EZ/BCH1004/2025",
+  "EZ/ENG1005/2025",
+  "EZ/PHY1006/2025",
+  "EZ/BIO1007/2025",
+  "EZ/STA1008/2025",
+  "EZ/ECO1009/2025",
+  "EZ/ACC1010/2025",
+]; // ✅ <— Missing closing bracket fixed!
 
 /** 🧩 Utility: Validate required candidate fields */
 const validateCandidateInput = ({ name, position, department, image }) => {
@@ -109,6 +116,7 @@ export const getCandidates = asyncHandler(async (req, res) => {
   res.status(200).json(
     candidates.map((c) => ({
       _id: c._id,
+      id: c._id, // ✅ Added this so frontend `item.id` works
       name: c.name,
       position: c.position,
       department: c.department,
