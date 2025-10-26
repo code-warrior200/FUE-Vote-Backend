@@ -83,19 +83,60 @@ const processVote = async ({ voterRegNumber, candidate, isDemo, io }) => {
   } catch (error) {
     if (error.code === 11000) {
       return {
-        position,
+        candidate,
         status: "error",
-        message: `You have already voted for ${position}.`,
+        message: `You have already voted for ${candidate}.`,
       };
     }
 
     return {
-      position,
+      candidate,
       status: "error",
       message: error.message || "Vote failed.",
     };
   }
 };
+
+/** 👁️ View all votes by the logged-in voter */
+export const getMyVotes = asyncHandler(async (req, res) => {
+  const voterRegNumber = req.user?.regnumber?.trim().toUpperCase();
+
+  if (!voterRegNumber) {
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized: voter identity missing.",
+    });
+  }
+
+  // Fetch all votes by this voter
+  const votes = await Vote.find({ voterRegNumber })
+    .populate("candidateId", "name position")
+    .sort({ position: 1 });
+
+  if (!votes.length) {
+    return res.status(200).json({
+      success: true,
+      message: "You have not voted yet.",
+      votes: [],
+    });
+  }
+
+  // Format votes neatly
+  const formatted = votes.map((v) => ({
+    position: v.position,
+    candidateName: v.candidateId?.name || "Candidate not found",
+    candidateId: v.candidateId?._id,
+    votedAt: v.createdAt,
+  }));
+
+  res.status(200).json({
+    success: true,
+    message: "Your voting record retrieved successfully.",
+    totalVotes: formatted.length,
+    votes: formatted,
+  });
+});
+
 
 /** 🗳️ Cast one or multiple votes */
 export const castVote = asyncHandler(async (req, res) => {
