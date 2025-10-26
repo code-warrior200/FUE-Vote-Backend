@@ -3,23 +3,29 @@ import Candidate from "../models/Candidate.js";
 import Vote from "../models/Vote.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
-// 🧠 In-memory demo vote tracking (for demo mode only)
+// 🧠 In-memory demo vote tracking
 const demoVotes = {}; // { voterRegNumber: { position: candidateId } }
 const demoCandidateVotes = {}; // { candidateId: totalVotes }
 
 /** 🧩 Validate MongoDB ObjectId */
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
-/** 🧠 Record a demo vote (only once per position) */
+/** 🧠 Record a demo vote (one vote per voter per position) */
 const recordDemoVote = (voterRegNumber, candidate) => {
   const position = candidate.position;
+
+  // Initialize voter record if missing
   demoVotes[voterRegNumber] = demoVotes[voterRegNumber] || {};
 
+  // Prevent same voter from voting twice for the same position
   if (demoVotes[voterRegNumber][position]) {
     throw new Error(`You have already voted for ${position} (demo mode).`);
   }
 
+  // Record vote
   demoVotes[voterRegNumber][position] = candidate._id;
+
+  // Increment candidate's total votes
   demoCandidateVotes[candidate._id] = (demoCandidateVotes[candidate._id] || 0) + 1;
 
   return { voterRegNumber, candidateId: candidate._id, position };
@@ -44,7 +50,7 @@ const processVote = async ({ voterRegNumber, candidate, isDemo, io }) => {
     if (isDemo) {
       recordDemoVote(voterRegNumber, candidate);
     } else {
-      // ✅ Check if voter already voted for this *position*
+      // ✅ Only prevent the same voter from voting twice per position
       const alreadyVoted = await Vote.findOne({ voterRegNumber, position });
       if (alreadyVoted) {
         return {
@@ -54,12 +60,14 @@ const processVote = async ({ voterRegNumber, candidate, isDemo, io }) => {
         };
       }
 
+      // ✅ Create vote
       await Vote.create({
         voterRegNumber,
         candidateId: candidate._id,
         position,
       });
 
+      // ✅ Increment candidate's totalVotes
       await Candidate.findByIdAndUpdate(candidate._id, { $inc: { totalVotes: 1 } });
     }
 
@@ -89,9 +97,7 @@ const processVote = async ({ voterRegNumber, candidate, isDemo, io }) => {
   }
 };
 
-/**
- * 🗳️ Cast one or multiple votes
- */
+/** 🗳️ Cast one or multiple votes */
 export const castVote = asyncHandler(async (req, res) => {
   const voterRegNumber = req.user?.regnumber;
   const isDemo = req.user?.isDemo || false;
@@ -149,9 +155,7 @@ export const castVote = asyncHandler(async (req, res) => {
   });
 });
 
-/**
- * 🧹 Reset all votes (Admin only)
- */
+/** 🧹 Reset all votes (Admin only) */
 export const resetAllVotes = asyncHandler(async (req, res) => {
   await Vote.deleteMany({});
   await Candidate.updateMany({}, { totalVotes: 0 });
@@ -162,9 +166,7 @@ export const resetAllVotes = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, message: "✅ All votes have been reset." });
 });
 
-/**
- * 🧼 Reset votes for a specific position
- */
+/** 🧼 Reset votes for a specific position */
 export const resetVotes = asyncHandler(async (req, res) => {
   const { position } = req.body;
   if (!position)
@@ -187,9 +189,7 @@ export const resetVotes = asyncHandler(async (req, res) => {
     .json({ success: true, message: `✅ Votes for "${position}" have been reset.` });
 });
 
-/**
- * 📊 Get voting results
- */
+/** 📊 Get voting results */
 export const getResults = asyncHandler(async (req, res) => {
   const candidates = await Candidate.find({})
     .select("name position totalVotes")
