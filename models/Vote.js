@@ -7,6 +7,7 @@ const voteSchema = new mongoose.Schema(
       required: [true, "Voter registration number is required"],
       trim: true,
       uppercase: true,
+      unique: true, // ✅ each voter can only vote once total
     },
     candidateId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -22,9 +23,8 @@ const voteSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// ✅ Allow multiple voters to vote for one position,
-//    but each voter can only vote once per position
-voteSchema.index({ voterRegNumber: 1, position: 1 }, { unique: true });
+// ✅ ensure voter can only appear once in collection
+voteSchema.index({ voterRegNumber: 1 }, { unique: true });
 
 const Vote = mongoose.model("Vote", voteSchema);
 export default Vote;

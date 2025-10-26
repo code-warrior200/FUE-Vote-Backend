@@ -4,21 +4,19 @@ import Vote from "../models/Vote.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
 // 🧠 In-memory demo vote tracking
-const demoVotes = {}; // { voterRegNumber: { position: candidateId } }
+const demoVotes = {}; // { voterRegNumber: candidateId }
 const demoCandidateVotes = {}; // { candidateId: totalVotes }
 
 /** 🧩 Validate MongoDB ObjectId */
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
-/** 🧠 Record a demo vote */
+/** 🧠 Record a demo vote (only once total) */
 const recordDemoVote = (voterRegNumber, candidate) => {
-  if (!demoVotes[voterRegNumber]) demoVotes[voterRegNumber] = {};
-
-  if (demoVotes[voterRegNumber][candidate.position]) {
-    throw new Error(`You have already voted for "${candidate.position}" (demo mode).`);
+  if (demoVotes[voterRegNumber]) {
+    throw new Error(`You have already voted for a candidate (demo mode).`);
   }
 
-  demoVotes[voterRegNumber][candidate.position] = candidate._id;
+  demoVotes[voterRegNumber] = candidate._id;
   demoCandidateVotes[candidate._id] = (demoCandidateVotes[candidate._id] || 0) + 1;
 
   return {
@@ -39,22 +37,27 @@ const emitVoteEvent = (io, candidate, isDemo = false) => {
   }
 };
 
-/** 🛠️ Helper to process a single vote */
+/** 🛠️ Process a single vote */
 const processVote = async ({ voterRegNumber, candidate, isDemo, io }) => {
   try {
     if (isDemo) {
       recordDemoVote(voterRegNumber, candidate);
     } else {
-      const alreadyVoted = await Vote.findOne({ voterRegNumber, position: candidate.position });
+      // ✅ Check if voter already voted for ANY candidate
+      const alreadyVoted = await Vote.findOne({ voterRegNumber });
       if (alreadyVoted) {
         return {
           position: candidate.position,
           status: "skipped",
-          message: `You have already voted for "${candidate.position}".`,
+          message: "You have already voted for a candidate.",
         };
       }
 
-      await Vote.create({ voterRegNumber, candidateId: candidate._id, position: candidate.position });
+      await Vote.create({
+        voterRegNumber,
+        candidateId: candidate._id,
+        position: candidate.position,
+      });
       await Candidate.findByIdAndUpdate(candidate._id, { $inc: { totalVotes: 1 } });
     }
 
@@ -68,6 +71,15 @@ const processVote = async ({ voterRegNumber, candidate, isDemo, io }) => {
       }.`,
     };
   } catch (error) {
+    // Graceful duplicate key error
+    if (error.code === 11000) {
+      return {
+        position: candidate.position,
+        status: "error",
+        message: "You have already voted for a candidate.",
+      };
+    }
+
     return {
       position: candidate.position,
       status: "error",
@@ -85,48 +97,67 @@ export const castVote = asyncHandler(async (req, res) => {
   const io = req.io;
 
   if (!voterRegNumber) {
-    return res.status(401).json({ success: false, message: "Unauthorized: voter identity missing." });
+    return res
+      .status(401)
+      .json({ success: false, message: "Unauthorized: voter identity missing." });
   }
 
   const { candidateId, votes } = req.body;
 
-  const results = [];
-
-  // Multi-vote
-  if (Array.isArray(votes)) {
-    for (const voteItem of votes) {
-      const { candidateId } = voteItem;
-      if (!candidateId || !isValidObjectId(candidateId)) {
-        results.push({ position: voteItem.position, status: "error", message: "Invalid or missing candidate ID." });
-        continue;
-      }
-
-      const candidate = await Candidate.findById(candidateId);
-      if (!candidate) {
-        results.push({ position: voteItem.position, status: "error", message: "Candidate not found." });
-        continue;
-      }
-
-      const result = await processVote({ voterRegNumber, candidate, isDemo, io });
-      results.push(result);
-    }
-
-    return res.status(200).json({ success: true, message: "Vote submission complete.", results });
+  // ✅ Check globally if this voter has already voted
+  const alreadyVoted = await Vote.findOne({ voterRegNumber });
+  if (alreadyVoted) {
+    return res.status(400).json({
+      success: false,
+      message: "You have already voted for a candidate.",
+    });
   }
 
-  // Single vote
+  // Multi-vote submission (e.g. from summary page)
+  if (Array.isArray(votes) && votes.length > 0) {
+    const first = votes[0];
+    const validId = first?.candidateId;
+
+    if (!validId || !isValidObjectId(validId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid or missing candidate ID." });
+    }
+
+    const candidate = await Candidate.findById(validId);
+    if (!candidate) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Candidate not found." });
+    }
+
+    const result = await processVote({ voterRegNumber, candidate, isDemo, io });
+    const statusCode = result.status === "success" ? 201 : 400;
+    return res.status(statusCode).json({
+      success: result.status === "success",
+      message: result.message,
+    });
+  }
+
+  // Single vote submission
   if (!candidateId || !isValidObjectId(candidateId)) {
-    return res.status(400).json({ success: false, message: "Invalid or missing candidate ID." });
+    return res
+      .status(400)
+      .json({ success: false, message: "Invalid or missing candidate ID." });
   }
 
   const candidate = await Candidate.findById(candidateId);
   if (!candidate) {
-    return res.status(404).json({ success: false, message: "Candidate not found." });
+    return res
+      .status(404)
+      .json({ success: false, message: "Candidate not found." });
   }
 
   const result = await processVote({ voterRegNumber, candidate, isDemo, io });
   const statusCode = result.status === "success" ? 201 : 400;
-  return res.status(statusCode).json({ success: result.status === "success", ...result });
+  return res
+    .status(statusCode)
+    .json({ success: result.status === "success", ...result });
 });
 
 /**
@@ -147,7 +178,10 @@ export const resetAllVotes = asyncHandler(async (req, res) => {
  */
 export const resetVotes = asyncHandler(async (req, res) => {
   const { position } = req.body;
-  if (!position) return res.status(400).json({ success: false, message: "Position is required." });
+  if (!position)
+    return res
+      .status(400)
+      .json({ success: false, message: "Position is required." });
 
   const candidates = await Candidate.find({ position });
   const ids = candidates.map((c) => c._id);
@@ -156,10 +190,12 @@ export const resetVotes = asyncHandler(async (req, res) => {
   await Candidate.updateMany({ position }, { totalVotes: 0 });
 
   for (const voter in demoVotes) {
-    if (demoVotes[voter][position]) delete demoVotes[voter][position];
+    if (demoVotes[voter]) delete demoVotes[voter];
   }
 
-  res.status(200).json({ success: true, message: `✅ Votes for "${position}" have been reset.` });
+  res
+    .status(200)
+    .json({ success: true, message: `✅ Votes for "${position}" have been reset.` });
 });
 
 /**
