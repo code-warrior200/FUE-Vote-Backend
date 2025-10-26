@@ -22,11 +22,9 @@ const voteSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-
-
-// ✅ REMOVE UNIQUE RESTRICTION — allow multiple voters per position
-// ❌ Do NOT include `unique: true` in your index
-voteSchema.index({ voterRegNumber: null, position: 1 }, { unique: false });
+// ✅ Allow multiple voters to vote for one position,
+//    but each voter can only vote once per position
+voteSchema.index({ voterRegNumber: 1, position: 1 }, { unique: true });
 
 const Vote = mongoose.model("Vote", voteSchema);
 export default Vote;
