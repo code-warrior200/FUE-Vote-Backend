@@ -56,18 +56,21 @@ export const castVote = asyncHandler(async (req, res) => {
       .json({ success: false, message: "Unauthorized: voter identity missing." });
   }
 
-  const { candidateId, position, votes } = req.body;
+  const { candidateId, votes } = req.body;
 
   // ✅ Handle multiple votes
   if (Array.isArray(votes)) {
     const results = [];
 
-    for (const { position, candidateId } of votes) {
+    for (const voteItem of votes) {
+      const { position, candidateId } = voteItem;
+
       if (!candidateId || !isValidObjectId(candidateId)) {
         results.push({ position, status: "error", message: "Invalid or missing candidate ID." });
         continue;
       }
 
+      // Fetch candidate once
       const candidate = await Candidate.findById(candidateId);
       if (!candidate) {
         results.push({ position, status: "error", message: "Candidate not found." });
@@ -93,6 +96,7 @@ export const castVote = asyncHandler(async (req, res) => {
         }
 
         emitVoteEvent(io, candidate, isDemo);
+
         results.push({
           position: candidate.position,
           status: "success",
