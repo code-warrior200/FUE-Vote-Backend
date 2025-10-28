@@ -221,6 +221,6 @@ router.post("/", protect, voterOnly, castVote);
  * @desc Retrieve grouped vote summary (public)
  * @access Public (or protect it if you prefer)
  */
-router.get("/votes/summary", getVoteSummary);
+router.get("/votes/summary", protect, getVoteSummary);
 
 export default router;
