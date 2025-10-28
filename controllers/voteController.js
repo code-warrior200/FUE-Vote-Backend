@@ -252,24 +252,16 @@ export const getVoteSummary = asyncHandler(async (req, res) => {
       .select("name position dept image totalVotes")
       .sort({ position: 1, totalVotes: -1 });
 
-    if (!candidates.length) {
-      return res.status(200).json([]);
-    }
-
-    // Group candidates by position
-    const grouped = candidates.reduce((acc, candidate) => {
-      if (!acc[candidate.position]) {
-        acc[candidate.position] = {
-          position: candidate.position,
-          candidates: [],
-        };
+    const grouped = candidates.reduce((acc, c) => {
+      if (!acc[c.position]) {
+        acc[c.position] = { position: c.position, candidates: [] };
       }
-      acc[candidate.position].candidates.push({
-        id: candidate._id,
-        name: candidate.name,
-        dept: candidate.dept,
-        image: candidate.image,
-        totalVotes: candidate.totalVotes + (demoCandidateVotes[candidate._id] || 0),
+      acc[c.position].candidates.push({
+        id: c._id,
+        name: c.name,
+        dept: c.dept,
+        image: c.image,
+        totalVotes: c.totalVotes,
       });
       return acc;
     }, {});
@@ -277,11 +269,6 @@ export const getVoteSummary = asyncHandler(async (req, res) => {
     res.status(200).json(Object.values(grouped));
   } catch (error) {
     console.error("Error fetching vote summary:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to load vote summary.",
-      error: error.message,
-    });
+    res.status(500).json({ success: false, message: "Failed to load vote summary." });
   }
 });
-
