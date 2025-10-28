@@ -252,16 +252,20 @@ export const getVoteSummary = asyncHandler(async (req, res) => {
       .select("name position dept image totalVotes")
       .sort({ position: 1, totalVotes: -1 });
 
-    const grouped = candidates.reduce((acc, c) => {
-      if (!acc[c.position]) {
-        acc[c.position] = { position: c.position, candidates: [] };
+    // ✅ Group candidates by position
+    const grouped = candidates.reduce((acc, candidate) => {
+      if (!acc[candidate.position]) {
+        acc[candidate.position] = {
+          position: candidate.position,
+          candidates: [],
+        };
       }
-      acc[c.position].candidates.push({
-        id: c._id,
-        name: c.name,
-        dept: c.dept,
-        image: c.image,
-        totalVotes: c.totalVotes,
+      acc[candidate.position].candidates.push({
+        id: candidate._id,
+        name: candidate.name,
+        dept: candidate.dept,
+        image: candidate.image,
+        totalVotes: candidate.totalVotes || 0,
       });
       return acc;
     }, {});
