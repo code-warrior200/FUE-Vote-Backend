@@ -1,5 +1,5 @@
 import express from "express";
-import { castVote } from "../controllers/voteController.js";
+import { castVote, getVoteSummary } from "../controllers/voteController.js";
 import { protect, voterOnly } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
@@ -39,7 +39,8 @@ export const swaggerVoteRoutes = {
                     candidateId: {
                       type: "string",
                       example: "67162a1f9c8c123456789abc",
-                      description: "ID of the candidate being voted for (single-vote mode).",
+                      description:
+                        "ID of the candidate being voted for (single-vote mode).",
                     },
                     position: {
                       type: "string",
@@ -91,13 +92,17 @@ export const swaggerVoteRoutes = {
                   success: { type: "boolean", example: true },
                   message: {
                     type: "string",
-                    example: "✅ Your vote for 'John Doe' as 'President' has been recorded successfully.",
+                    example:
+                      "✅ Your vote for 'John Doe' as 'President' has been recorded successfully.",
                   },
                   data: {
                     type: "object",
                     properties: {
                       voterRegNumber: { type: "string", example: "FUE/ICT/001" },
-                      candidateId: { type: "string", example: "67162a1f9c8c123456789abc" },
+                      candidateId: {
+                        type: "string",
+                        example: "67162a1f9c8c123456789abc",
+                      },
                       position: { type: "string", example: "President" },
                     },
                   },
@@ -107,7 +112,8 @@ export const swaggerVoteRoutes = {
           },
         },
         200: {
-          description: "Batch vote submission completed (multi-vote mode).",
+          description:
+            "Batch vote submission completed (multi-vote mode).",
           content: {
             "application/json": {
               schema: {
@@ -124,7 +130,8 @@ export const swaggerVoteRoutes = {
                         status: { type: "string", example: "success" },
                         message: {
                           type: "string",
-                          example: "✅ Your vote for 'John Doe' as 'President' has been recorded successfully.",
+                          example:
+                            "✅ Your vote for 'John Doe' as 'President' has been recorded successfully.",
                         },
                       },
                     },
@@ -142,7 +149,10 @@ export const swaggerVoteRoutes = {
                 type: "object",
                 properties: {
                   success: { type: "boolean", example: false },
-                  message: { type: "string", example: "You have already voted for 'President'." },
+                  message: {
+                    type: "string",
+                    example: "You have already voted for 'President'.",
+                  },
                 },
               },
             },
@@ -150,6 +160,47 @@ export const swaggerVoteRoutes = {
         },
         401: { description: "Unauthorized — invalid or missing token." },
         403: { description: "Forbidden — voter privileges required." },
+        500: { description: "Internal server error." },
+      },
+    },
+  },
+
+  "/api/votes/summary": {
+    get: {
+      summary: "Get summarized voting results grouped by position",
+      description:
+        "Retrieves a list of all positions and their candidates with current total votes (both real and demo votes).",
+      tags: ["Votes"],
+      responses: {
+        200: {
+          description: "Vote summary retrieved successfully.",
+          content: {
+            "application/json": {
+              schema: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    position: { type: "string", example: "President" },
+                    candidates: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          id: { type: "string", example: "67162a1f9c8c123456789abc" },
+                          name: { type: "string", example: "John Doe" },
+                          dept: { type: "string", example: "Computer Science" },
+                          image: { type: "string", example: "https://example.com/john.jpg" },
+                          totalVotes: { type: "number", example: 152 },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
         500: { description: "Internal server error." },
       },
     },
@@ -164,5 +215,12 @@ export const swaggerVoteRoutes = {
  * @access Private (authenticated voters only)
  */
 router.post("/", protect, voterOnly, castVote);
+
+/**
+ * @route GET /api/votes/summary
+ * @desc Retrieve grouped vote summary (public)
+ * @access Public (or protect it if you prefer)
+ */
+router.get("/votes/summary", getVoteSummary);
 
 export default router;
