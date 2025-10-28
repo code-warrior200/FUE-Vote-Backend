@@ -248,7 +248,7 @@ export const getResults = asyncHandler(async (req, res) => {
 /** 📊 Get vote summary grouped by position */
 export const getVoteSummary = asyncHandler(async (req, res) => {
   try {
-    const candidates = await Candidate.find({})
+    const candidates = await Candidate.find()
       .select("name position dept image totalVotes")
       .sort({ position: 1, totalVotes: -1 });
 
