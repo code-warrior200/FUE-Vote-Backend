@@ -1,10 +1,12 @@
 import express from "express";
-import { castVote, getVoteSummary } from "../controllers/voteController.js";
+import { processVotesAtomically } from "../controllers/voteController.js";
 import { protect, voterOnly } from "../middleware/authMiddleware.js";
+import Candidate from "../models/Candidate.js";
+import { asyncHandler } from "../middleware/asyncHandler.js";
 
 const router = express.Router();
 
-// ======= SWAGGER TAGS =======
+/* ========= SWAGGER TAGS ========= */
 export const swaggerVoteTags = {
   tags: [
     {
@@ -14,17 +16,16 @@ export const swaggerVoteTags = {
   ],
 };
 
-// ======= SWAGGER ROUTE DEFINITIONS =======
+/* ========= SWAGGER ROUTES ========= */
 export const swaggerVoteRoutes = {
   "/api/vote": {
     post: {
-      summary: "Cast one or multiple votes",
+      summary: "Cast or update one or multiple votes",
       description:
-        "Allows an authenticated voter to cast one or multiple votes for candidates.\n\n" +
-        "Supports:\n" +
+        "Authenticated voters can cast, refresh, or update votes.\n\nSupports:\n" +
         " - **Single vote mode:** `{ candidateId, position }`\n" +
         " - **Batch vote mode:** `{ votes: [ { position, candidateId } ] }`\n\n" +
-        "All votes are automatically linked to the authenticated voter's registration number.",
+        "All votes automatically attach to the voter's registration number and overwrite previous choices per position.",
       tags: ["Votes"],
       security: [{ bearerAuth: [] }],
       requestBody: {
@@ -36,17 +37,8 @@ export const swaggerVoteRoutes = {
                 {
                   type: "object",
                   properties: {
-                    candidateId: {
-                      type: "string",
-                      example: "67162a1f9c8c123456789abc",
-                      description:
-                        "ID of the candidate being voted for (single-vote mode).",
-                    },
-                    position: {
-                      type: "string",
-                      example: "President",
-                      description: "Position being voted for.",
-                    },
+                    candidateId: { type: "string" },
+                    position: { type: "string" },
                   },
                   required: ["candidateId", "position"],
                 },
@@ -55,20 +47,11 @@ export const swaggerVoteRoutes = {
                   properties: {
                     votes: {
                       type: "array",
-                      description: "List of votes for different positions.",
                       items: {
                         type: "object",
                         properties: {
-                          position: {
-                            type: "string",
-                            example: "President",
-                            description: "Position being voted for.",
-                          },
-                          candidateId: {
-                            type: "string",
-                            example: "67162a1f9c8c123456789abc",
-                            description: "Candidate ID being voted for.",
-                          },
+                          position: { type: "string" },
+                          candidateId: { type: "string" },
                         },
                         required: ["position", "candidateId"],
                       },
@@ -82,145 +65,106 @@ export const swaggerVoteRoutes = {
         },
       },
       responses: {
-        201: {
-          description: "Vote successfully recorded.",
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: {
-                  success: { type: "boolean", example: true },
-                  message: {
-                    type: "string",
-                    example:
-                      "✅ Your vote for 'John Doe' as 'President' has been recorded successfully.",
-                  },
-                  data: {
-                    type: "object",
-                    properties: {
-                      voterRegNumber: { type: "string", example: "FUE/ICT/001" },
-                      candidateId: {
-                        type: "string",
-                        example: "67162a1f9c8c123456789abc",
-                      },
-                      position: { type: "string", example: "President" },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-        200: {
-          description:
-            "Batch vote submission completed (multi-vote mode).",
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: {
-                  success: { type: "boolean", example: true },
-                  message: { type: "string", example: "Vote submission complete." },
-                  results: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        position: { type: "string", example: "President" },
-                        status: { type: "string", example: "success" },
-                        message: {
-                          type: "string",
-                          example:
-                            "✅ Your vote for 'John Doe' as 'President' has been recorded successfully.",
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-        400: {
-          description: "Bad request — invalid or duplicate vote.",
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: {
-                  success: { type: "boolean", example: false },
-                  message: {
-                    type: "string",
-                    example: "You have already voted for 'President'.",
-                  },
-                },
-              },
-            },
-          },
-        },
-        401: { description: "Unauthorized — invalid or missing token." },
+        201: { description: "Vote successfully recorded or updated." },
+        400: { description: "Invalid or duplicate vote request." },
+        401: { description: "Unauthorized." },
         403: { description: "Forbidden — voter privileges required." },
         500: { description: "Internal server error." },
       },
     },
   },
-
   "/api/votes/summary": {
     get: {
       summary: "Get summarized voting results grouped by position",
       description:
-        "Retrieves a list of all positions and their candidates with current total votes (both real and demo votes).",
+        "Retrieves all positions and their candidates with total votes in real-time.",
       tags: ["Votes"],
       responses: {
-        200: {
-          description: "Vote summary retrieved successfully.",
-          content: {
-            "application/json": {
-              schema: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    position: { type: "string", example: "President" },
-                    candidates: {
-                      type: "array",
-                      items: {
-                        type: "object",
-                        properties: {
-                          id: { type: "string", example: "67162a1f9c8c123456789abc" },
-                          name: { type: "string", example: "John Doe" },
-                          dept: { type: "string", example: "Computer Science" },
-                          image: { type: "string", example: "https://example.com/john.jpg" },
-                          totalVotes: { type: "number", example: 152 },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
+        200: { description: "Vote summary retrieved successfully." },
         500: { description: "Internal server error." },
       },
     },
   },
 };
 
-// ======= ROUTES =======
+/* ========= CONTROLLERS ========= */
 
-/**
- * @route POST /api/vote
- * @desc Cast a vote for a candidate (single or multiple)
- * @access Private (authenticated voters only)
- */
+// ✅ Updated castVote: supports refresh + update logic automatically
+export const castVote = asyncHandler(async (req, res) => {
+  const { candidateId, position, votes, isDemo } = req.body;
+  const voterRegNumber = req.user?.regNumber || req.body.voterRegNumber;
+  const io = req.app.get("io");
+
+  if (!voterRegNumber) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Missing voter registration number" });
+  }
+
+  let candidateIds = [];
+
+  // Single vote
+  if (candidateId && position) {
+    candidateIds.push({ _id: candidateId, position });
+  }
+  // Multiple votes
+  else if (Array.isArray(votes) && votes.length > 0) {
+    candidateIds = votes.map((v) => ({
+      _id: v.candidateId,
+      position: v.position,
+    }));
+  } else {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid body. Provide {candidateId, position} or votes[].",
+    });
+  }
+
+  // ✅ Call atomic processor: it refreshes and updates votes cleanly
+  const results = await processVotesAtomically({
+    voterRegNumber,
+    candidateIds,
+    isDemo,
+    io,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Votes processed successfully (recorded/updated).",
+    results,
+  });
+});
+
+// ✅ Public summary endpoint
+export const getVoteSummary = asyncHandler(async (req, res) => {
+  const candidates = await Candidate.find();
+
+  const summary = candidates.reduce((acc, c) => {
+    const position = c.position || "Unknown";
+    if (!acc[position]) acc[position] = [];
+    acc[position].push({
+      id: c._id,
+      name: c.name,
+      dept: c.dept,
+      image: c.image,
+      totalVotes: c.totalVotes || 0,
+    });
+    return acc;
+  }, {});
+
+  res.status(200).json({
+    success: true,
+    message: "Vote summary retrieved successfully.",
+    data: summary,
+  });
+});
+
+/* ========= ROUTES ========= */
+
+// Cast or update votes (authenticated voters only)
 router.post("/", protect, voterOnly, castVote);
 
-/**
- * @route GET /api/votes/summary
- * @desc Retrieve grouped vote summary (public)
- * @access Public (or protect it if you prefer)
- */
+// Public summary route
 router.get("/votes/summary", getVoteSummary);
 
 export default router;

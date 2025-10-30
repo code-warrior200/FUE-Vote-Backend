@@ -23,12 +23,30 @@ const voteSchema = new mongoose.Schema(
 );
 
 /* 
-✅ RULE:
+✅ RULES:
   - Each voter can vote only once per position.
   - Many voters can vote for the same candidate.
   - No voter can cast two votes for the same position.
 */
 voteSchema.index({ voterRegNumber: 1, position: 1 }, { unique: true });
+
+/*
+  ✅ Mongoose middleware to increment candidate's totalVotes
+  whenever a new vote is created
+*/
+voteSchema.post("save", async function (doc, next) {
+  try {
+    const Candidate = mongoose.model("Candidate");
+
+    await Candidate.findByIdAndUpdate(doc.candidateId, {
+      $inc: { totalVotes: 1 }, // increment totalVotes by 1
+    });
+
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 
 const Vote = mongoose.model("Vote", voteSchema);
 export default Vote;
