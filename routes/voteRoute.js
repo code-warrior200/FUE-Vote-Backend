@@ -92,7 +92,9 @@ export const swaggerVoteRoutes = {
 // ✅ Updated castVote: supports refresh + update logic automatically
 export const castVote = asyncHandler(async (req, res) => {
   const { candidateId, position, votes, isDemo } = req.body;
-  const voterRegNumber = req.user?.regNumber || req.body.voterRegNumber;
+
+  // 🔧 FIXED: 'regNumber' → 'regnumber' to match token payload from authController
+  const voterRegNumber = req.user?.regnumber || req.body.voterRegNumber;
   const io = req.app.get("io");
 
   if (!voterRegNumber) {
@@ -120,7 +122,7 @@ export const castVote = asyncHandler(async (req, res) => {
     });
   }
 
-  // ✅ Call atomic processor: it refreshes and updates votes cleanly
+  // ✅ Call atomic processor: refreshes and updates votes cleanly
   const results = await processVotesAtomically({
     voterRegNumber,
     candidateIds,
