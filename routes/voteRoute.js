@@ -65,7 +65,7 @@ export const swaggerVoteRoutes = {
         },
       },
       responses: {
-        201: { description: "Vote successfully recorded or updated." },
+        200: { description: "Vote successfully recorded or updated." },
         400: { description: "Invalid or duplicate vote request." },
         401: { description: "Unauthorized." },
         403: { description: "Forbidden — voter privileges required." },
@@ -73,7 +73,7 @@ export const swaggerVoteRoutes = {
       },
     },
   },
-  "/api/votes/summary": {
+  "/api/vote/summary": {
     get: {
       summary: "Get summarized voting results grouped by position",
       description:
@@ -89,11 +89,9 @@ export const swaggerVoteRoutes = {
 
 /* ========= CONTROLLERS ========= */
 
-// ✅ Updated castVote: supports refresh + update logic automatically
 export const castVote = asyncHandler(async (req, res) => {
   const { candidateId, position, votes, isDemo } = req.body;
 
-  // 🔧 FIXED: 'regNumber' → 'regnumber' to match token payload from authController
   const voterRegNumber = req.user?.regnumber || req.body.voterRegNumber;
   const io = req.app.get("io");
 
@@ -122,7 +120,6 @@ export const castVote = asyncHandler(async (req, res) => {
     });
   }
 
-  // ✅ Call atomic processor: refreshes and updates votes cleanly
   const results = await processVotesAtomically({
     voterRegNumber,
     candidateIds,
@@ -137,7 +134,6 @@ export const castVote = asyncHandler(async (req, res) => {
   });
 });
 
-// ✅ Public summary endpoint
 export const getVoteSummary = asyncHandler(async (req, res) => {
   const candidates = await Candidate.find();
 
@@ -147,7 +143,7 @@ export const getVoteSummary = asyncHandler(async (req, res) => {
     acc[position].push({
       id: c._id,
       name: c.name,
-      dept: c.dept,
+      department: c.department,
       image: c.image,
       totalVotes: c.totalVotes || 0,
     });
@@ -167,6 +163,6 @@ export const getVoteSummary = asyncHandler(async (req, res) => {
 router.post("/", protect, voterOnly, castVote);
 
 // Public summary route
-router.get("/votes/summary", getVoteSummary);
+router.get("/summary", getVoteSummary);
 
 export default router;
