@@ -2,10 +2,10 @@
   "name": "fue-vote-backend",
   "version": "1.0.0",
   "description": "",
-  "main": "dist/server.js",
+  "main": "src/server.js",
   "scripts": {
     "prestart": "npm run build",
-    "start": "node dist/server.js",
+    "start": "node src/server.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "lint": "tsc --noEmit",
