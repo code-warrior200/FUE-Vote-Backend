@@ -32,18 +32,6 @@ const voteSchema = new Schema<VoteDocument>(
 
 voteSchema.index({ voterRegNumber: 1, position: 1 }, { unique: true });
 
-voteSchema.post("save", async function incrementCandidateVotes(doc, next) {
-  try {
-    const Candidate = mongoose.model("Candidate");
-    await Candidate.findByIdAndUpdate(doc.candidateId, {
-      $inc: { totalVotes: 1 },
-    });
-    next();
-  } catch (error) {
-    next(error as Error);
-  }
-});
-
 export const Vote: VoteModel = model<VoteDocument, VoteModel>("Vote", voteSchema);
 
 export default Vote;

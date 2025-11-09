@@ -1,8 +1,6 @@
 import express from "express";
-import { castVote, getVoteSummary } from "../controllers/voteController";
-import { protect, voterOnly } from "../middleware/authMiddleware";
-import Candidate from "../models/Candidate";
-import { asyncHandler } from "../middleware/asyncHandler";
+import { castVote, getVoteSummary, resetDemoVotes } from "../controllers/voteController";
+import { protect, voterOnly, adminOnly } from "../middleware/authMiddleware";
 
 const router = express.Router();
 
@@ -84,15 +82,7 @@ export const swaggerVoteRoutes = {
   },
 };
 
-router.post(
-  "/demo/reset",
-  protect,
-  voterOnly,
-  asyncHandler(async (_req, res) => {
-    await Candidate.updateMany({}, { $set: { totalVotes: 0 } });
-    res.status(200).json({ success: true, message: "Demo votes reset." });
-  })
-);
+router.post("/demo/reset", protect, adminOnly, resetDemoVotes);
 
 router.post("/", protect, voterOnly, castVote);
 router.get("/summary", getVoteSummary);
