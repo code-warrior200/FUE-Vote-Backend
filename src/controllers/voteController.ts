@@ -13,6 +13,28 @@ const demoCandidateVotes: DemoCandidateVotes = {};
 
 const isValidObjectId = (id: string) => mongoose.Types.ObjectId.isValid(id);
 
+const clearAllDemoVoteCaches = () => {
+  Object.keys(demoVotes).forEach((key) => delete demoVotes[key]);
+  Object.keys(demoCandidateVotes).forEach((key) => delete demoCandidateVotes[key]);
+};
+
+const clearDemoVoteCachesForPosition = (position: string, candidateIds: string[]) => {
+  Object.keys(demoVotes).forEach((regNumber) => {
+    if (demoVotes[regNumber]?.[position]) {
+      delete demoVotes[regNumber][position];
+      if (Object.keys(demoVotes[regNumber]).length === 0) {
+        delete demoVotes[regNumber];
+      }
+    }
+  });
+
+  candidateIds.forEach((candidateId) => {
+    if (demoCandidateVotes[candidateId]) {
+      delete demoCandidateVotes[candidateId];
+    }
+  });
+};
+
 const emitVoteEvent = (
   io: SocketIOServer | undefined,
   candidate: { _id: mongoose.Types.ObjectId | string; position: string },
@@ -46,12 +68,14 @@ export const processVotesAtomically = async ({
   isDemo = false,
   io,
 }: ProcessVotesParams) => {
+  const normalizedRegNumber = voterRegNumber.toUpperCase();
+
   if (isDemo) {
     const results: Array<{ position: string; status: string; message: string }> = [];
     for (const candidate of candidateIds) {
       const position = candidate.position;
-      demoVotes[voterRegNumber] = demoVotes[voterRegNumber] || {};
-      if (demoVotes[voterRegNumber][position]) {
+      demoVotes[normalizedRegNumber] = demoVotes[normalizedRegNumber] || {};
+      if (demoVotes[normalizedRegNumber][position]) {
         results.push({
           position,
           status: "error",
@@ -59,7 +83,7 @@ export const processVotesAtomically = async ({
         });
         continue;
       }
-      demoVotes[voterRegNumber][position] = candidate._id;
+      demoVotes[normalizedRegNumber][position] = candidate._id;
       demoCandidateVotes[candidate._id] = (demoCandidateVotes[candidate._id] || 0) + 1;
       emitVoteEvent(io, candidate, true);
       results.push({
@@ -72,14 +96,15 @@ export const processVotesAtomically = async ({
   }
 
   const session = await mongoose.startSession();
-  session.startTransaction();
+  const results: Array<{ position: string; status: string; message: string }> = [];
+
   try {
-    const results: Array<{ position: string; status: string; message: string }> = [];
+    session.startTransaction();
 
     for (const candidate of candidateIds) {
       const position = candidate.position;
 
-      const alreadyVoted = await Vote.findOne({ voterRegNumber, position }).session(session);
+      const alreadyVoted = await Vote.findOne({ voterRegNumber: normalizedRegNumber, position }).session(session);
       if (alreadyVoted) {
         results.push({
           position,
@@ -89,13 +114,19 @@ export const processVotesAtomically = async ({
         continue;
       }
 
-      await Vote.create([{ voterRegNumber, candidateId: candidate._id, position }], { session });
+      await Vote.create(
+        [{ voterRegNumber: normalizedRegNumber, candidateId: candidate._id, position }],
+        { session }
+      );
 
-      await Candidate.findByIdAndUpdate(
-        candidate._id,
+      const { matchedCount } = await Candidate.updateOne(
+        { _id: candidate._id },
         { $inc: { totalVotes: 1 } },
         { session }
       );
+      if (matchedCount === 0) {
+        throw new Error(`Candidate not found for id ${candidate._id}`);
+      }
 
       emitVoteEvent(io, candidate, false);
 
@@ -107,18 +138,17 @@ export const processVotesAtomically = async ({
     }
 
     await session.commitTransaction();
-    session.endSession();
-
     return results;
   } catch (error) {
     await session.abortTransaction();
-    session.endSession();
     console.error("Atomic vote transaction failed:", error);
     return candidateIds.map((candidate) => ({
       position: candidate.position,
       status: "error",
       message: (error as Error).message || "Vote failed.",
     }));
+  } finally {
+    session.endSession();
   }
 };
 
@@ -135,9 +165,11 @@ export const castVote = asyncHandler(async (req: Request<unknown, unknown, CastV
   const voterRegNumber = req.user?.regnumber || req.body.voterRegNumber;
   const io = req.app.get("io") as SocketIOServer | undefined;
 
-  if (!voterRegNumber) {
+  if (!voterRegNumber || typeof voterRegNumber !== "string" || !voterRegNumber.trim()) {
     return res.status(400).json({ success: false, message: "Missing voter registration number" });
   }
+
+  const normalizedRegNumber = voterRegNumber.trim().toUpperCase();
 
   let candidateInputs: CandidateVoteInput[] = [];
 
@@ -165,16 +197,47 @@ export const castVote = asyncHandler(async (req: Request<unknown, unknown, CastV
     candidateDocs.map((candidate) => [candidate._id.toString(), candidate])
   );
 
+  const missingCandidates = candidateInputs
+    .filter((candidate) => !candidateMap.has(candidate._id))
+    .map((candidate) => candidate._id);
+
+  if (missingCandidates.length > 0) {
+    return res.status(404).json({
+      success: false,
+      message: "One or more candidates were not found.",
+      missingCandidateIds: missingCandidates,
+    });
+  }
+
   const preparedCandidateInputs = candidateInputs.map((candidate) => {
     const doc = candidateMap.get(candidate._id);
     return {
       ...candidate,
+      position: doc?.position ?? candidate.position,
       name: doc?.name,
     };
   });
 
+  const seenPositions = new Set<string>();
+  for (const candidate of preparedCandidateInputs) {
+    if (!candidate.position) {
+      return res.status(500).json({
+        success: false,
+        message: `Candidate "${candidate._id}" has no position configured.`,
+      });
+    }
+
+    if (seenPositions.has(candidate.position)) {
+      return res.status(400).json({
+        success: false,
+        message: "You can only vote for one candidate per position in a single submission.",
+      });
+    }
+    seenPositions.add(candidate.position);
+  }
+
   const results = await processVotesAtomically({
-    voterRegNumber,
+    voterRegNumber: normalizedRegNumber,
     candidateIds: preparedCandidateInputs,
     isDemo,
     io,
@@ -192,6 +255,7 @@ export const getVoteSummary = asyncHandler(async (_req: Request, res: Response) 
 
   const summary = candidates.reduce<Record<string, Array<Record<string, unknown>>>>((acc, candidate) => {
     const position = candidate.position || "Unknown";
+    const demoTotal = demoCandidateVotes[candidate._id.toString()] ?? 0;
     if (!acc[position]) acc[position] = [];
     acc[position].push({
       id: candidate._id,
@@ -199,6 +263,7 @@ export const getVoteSummary = asyncHandler(async (_req: Request, res: Response) 
       department: candidate.department,
       image: candidate.image,
       totalVotes: candidate.totalVotes || 0,
+      demoVotes: demoTotal,
     });
     return acc;
   }, {});
@@ -210,8 +275,7 @@ export const resetAllVotes = asyncHandler(async (_req: Request, res: Response) =
   await Vote.deleteMany({});
   await Candidate.updateMany({}, { $set: { totalVotes: 0 } });
 
-  Object.keys(demoVotes).forEach((key) => delete demoVotes[key]);
-  Object.keys(demoCandidateVotes).forEach((key) => delete demoCandidateVotes[key]);
+  clearAllDemoVoteCaches();
 
   res.status(200).json({ success: true, message: "All votes have been reset." });
 });
@@ -222,23 +286,23 @@ export const resetVotes = asyncHandler(async (req: Request<unknown, unknown, { p
     return res.status(400).json({ success: false, message: "Position is required." });
   }
 
+  const candidates = await Candidate.find({ position }, { _id: 1 });
+
   await Vote.deleteMany({ position });
   await Candidate.updateMany({ position }, { $set: { totalVotes: 0 } });
 
-  const candidates = await Candidate.find({ position });
-  candidates.forEach((candidate) => {
-    delete demoCandidateVotes[candidate._id.toString()];
-  });
-
-  Object.keys(demoVotes).forEach((regNumber) => {
-    if (demoVotes[regNumber]?.[position]) {
-      delete demoVotes[regNumber][position];
-      if (Object.keys(demoVotes[regNumber]).length === 0) {
-        delete demoVotes[regNumber];
-      }
-    }
-  });
+  clearDemoVoteCachesForPosition(
+    position,
+    candidates.map((candidate) => candidate._id.toString())
+  );
 
   res.status(200).json({ success: true, message: `Votes for position "${position}" have been reset.` });
+});
+
+export const resetDemoVotes = asyncHandler(async (_req: Request, res: Response) => {
+  clearAllDemoVoteCaches();
+  await Candidate.updateMany({}, { $set: { totalVotes: 0 } });
+
+  res.status(200).json({ success: true, message: "Demo votes have been reset." });
 });
 

@@ -6,11 +6,11 @@ import cloudinary from "../config/cloudinary";
 
 const storage = new CloudinaryStorage({
   cloudinary,
-  params: {
+  params: async (): Promise<UploadApiOptions> => ({
     folder: "vote_upload",
     allowed_formats: ["jpg", "jpeg", "png", "webp"],
     transformation: [{ width: 500, height: 500, crop: "fill" }],
-  } as UploadApiOptions,
+  }),
 });
 
 export const upload = multer({
