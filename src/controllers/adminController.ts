@@ -55,7 +55,19 @@ const buildCategorySummary = async (category: CategoryDocument) => {
   };
 };
 
-type RequestWithFile = Request & { file?: Express.Multer.File };
+interface MulterFile {
+  fieldname: string;
+  originalname: string;
+  encoding: string;
+  mimetype: string;
+  size: number;
+  destination?: string;
+  filename?: string;
+  path?: string;
+  buffer?: Buffer;
+}
+
+type RequestWithFile = Request & { file?: MulterFile };
 
 export const getAllCandidates = asyncHandler(async (_req: Request, res: Response) => {
   const candidates = await Candidate.find().sort({ position: 1, name: 1 });
