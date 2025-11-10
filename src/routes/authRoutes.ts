@@ -119,7 +119,7 @@ router.post("/login", loginUser);
  * /api/auth/voter-login:
  *   post:
  *     summary: Login as a demo voter
- *     description: Authenticate a voter using only their registration number. This is a demo login that doesn't require a password. Registration number format is EZ followed by department code, number, and year (e.g., EZ/CSC1001/2025).
+ *     description: "Authenticate a voter using only their registration number. This is a demo login that doesn't require a password. Registration number format is EZ followed by department code, number, and year (example: EZ/CSC1001/2025)."
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -132,7 +132,7 @@ router.post("/login", loginUser);
  *             properties:
  *               regnumber:
  *                 type: string
- *                 description: Voter registration number in format EZ/DEPARTMENT_CODE+NUMBER/2025 (example: EZ/CSC1001/2025)
+ *                 description: "Voter registration number in format EZ/DEPARTMENT_CODE+NUMBER/2025 (example: EZ/CSC1001/2025)"
  *                 example: "EZ/CSC1001/2025"
  *     responses:
  *       200:
@@ -183,7 +183,7 @@ router.post("/login", loginUser);
  *               properties:
  *                 message:
  *                   type: string
- *                   example: "Invalid registration number format" or "Registration number not found"
+ *                   example: "Invalid registration number format"
  *       500:
  *         description: Internal server error
  */
@@ -194,7 +194,7 @@ router.post("/voter-login", loginVoter);
  * /api/auth/admin-login:
  *   post:
  *     summary: Login as an administrator
- *     description: Authenticate an admin user with username and password. Default credentials are username: "admin" and password: "admin123".
+ *     description: "Authenticate an admin user with username and password. Default credentials are username 'admin' and password 'admin123'."
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -305,7 +305,7 @@ router.post("/admin-login", loginAdmin);
  *               properties:
  *                 message:
  *                   type: string
- *                   example: "No token provided" or "Invalid or expired token"
+ *                   example: "Invalid or expired token"
  *       500:
  *         description: Internal server error
  */
@@ -336,7 +336,7 @@ router.post("/refresh", refreshToken);
  *                   properties:
  *                     regnumber:
  *                       type: string
- *                       example: "EZ/CSC1001/2025" or "ADMIN"
+ *                       example: "EZ/CSC1001/2025"
  *                     role:
  *                       type: string
  *                       enum: [admin, voter]
@@ -350,7 +350,7 @@ router.post("/refresh", refreshToken);
  *               properties:
  *                 message:
  *                   type: string
- *                   example: "No token provided" or "Invalid or expired token"
+ *                   example: "Invalid or expired token"
  *       500:
  *         description: Internal server error
  */

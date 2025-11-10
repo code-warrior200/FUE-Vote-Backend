@@ -169,7 +169,7 @@ const router = express.Router();
  *               properties:
  *                 message:
  *                   type: string
- *                   example: "No token provided" or "Invalid or expired token"
+ *                   example: "Invalid or expired token"
  *       403:
  *         description: Forbidden - voter privileges required
  *         content:
@@ -334,7 +334,7 @@ router.get("/summary", getVoteSummary);
  *               properties:
  *                 message:
  *                   type: string
- *                   example: "No token provided" or "Invalid or expired token"
+ *                   example: "Invalid or expired token"
  *       403:
  *         description: Forbidden - admin privileges required
  *         content:
