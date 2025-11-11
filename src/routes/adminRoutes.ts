@@ -5,7 +5,7 @@ import {
   getVoteSummary as getAdminVoteSummary,
   getAllCandidates,
 } from "../controllers/adminController";
-import { resetAllVotes, resetVotes } from "../controllers/voteController";
+import { resetAllVotes, resetVotes, verifyVoteCounts } from "../controllers/voteController";
 import { protect, adminOnly } from "../middleware/authMiddleware";
 
 const router = express.Router();
@@ -562,5 +562,64 @@ router.delete("/votes/reset-all", protect, adminOnly, resetAllVotes);
  *         description: Forbidden - admin privileges required
  */
 router.delete("/reset-all", protect, adminOnly, resetAllVotes);
+
+/**
+ * @swagger
+ * /api/admin/votes/verify:
+ *   post:
+ *     summary: Verify and sync vote counts (Admin only)
+ *     description: |
+ *       Verify that Candidate.totalVotes matches the actual count of Vote documents for each candidate.
+ *       If discrepancies are found, they will be automatically corrected by updating Candidate.totalVotes
+ *       to match the actual vote count from the Vote collection.
+ *       
+ *       This endpoint helps ensure data consistency and should be run periodically or when vote counts
+ *       seem incorrect.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Vote counts verified and synced
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Verified and synced 3 candidate vote count(s)."
+ *                 synced:
+ *                   type: number
+ *                   description: Number of candidates that had their vote counts synced
+ *                   example: 3
+ *                 discrepancies:
+ *                   type: array
+ *                   description: Array of discrepancies found and corrected
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       candidateId:
+ *                         type: string
+ *                         example: "507f1f77bcf86cd799439011"
+ *                       storedCount:
+ *                         type: number
+ *                         description: Vote count stored in Candidate.totalVotes
+ *                         example: 100
+ *                       actualCount:
+ *                         type: number
+ *                         description: Actual vote count from Vote collection
+ *                         example: 105
+ *       401:
+ *         description: Unauthorized - missing or invalid JWT token
+ *       403:
+ *         description: Forbidden - admin privileges required
+ *       500:
+ *         description: Internal server error
+ */
+router.post("/votes/verify", protect, adminOnly, verifyVoteCounts);
 
 export default router;

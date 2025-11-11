@@ -13,6 +13,39 @@ const demoCandidateVotes: DemoCandidateVotes = {};
 
 const isValidObjectId = (id: string) => mongoose.Types.ObjectId.isValid(id);
 
+/**
+ * Verify and sync vote counts for all candidates from actual Vote records
+ * This ensures data consistency between Candidate.totalVotes and actual Vote documents
+ */
+export const verifyAndSyncVoteCounts = async (): Promise<{
+  synced: number;
+  discrepancies: Array<{ candidateId: string; storedCount: number; actualCount: number }>;
+}> => {
+  const candidates = await Candidate.find();
+  const discrepancies: Array<{ candidateId: string; storedCount: number; actualCount: number }> = [];
+
+  for (const candidate of candidates) {
+    const actualCount = await Vote.countDocuments({ candidateId: candidate._id });
+    const storedCount = candidate.totalVotes || 0;
+
+    if (actualCount !== storedCount) {
+      discrepancies.push({
+        candidateId: candidate._id.toString(),
+        storedCount,
+        actualCount,
+      });
+
+      // Sync the count
+      await Candidate.updateOne({ _id: candidate._id }, { $set: { totalVotes: actualCount } });
+    }
+  }
+
+  return {
+    synced: discrepancies.length,
+    discrepancies,
+  };
+};
+
 const clearAllDemoVoteCaches = () => {
   Object.keys(demoVotes).forEach((key) => delete demoVotes[key]);
   Object.keys(demoCandidateVotes).forEach((key) => delete demoCandidateVotes[key]);
@@ -72,17 +105,31 @@ export const processVotesAtomically = async ({
 
   if (isDemo) {
     const results: Array<{ position: string; status: string; message: string }> = [];
+    const duplicatePositions: string[] = [];
+    
+    // Check for duplicates first
     for (const candidate of candidateIds) {
       const position = candidate.position;
       demoVotes[normalizedRegNumber] = demoVotes[normalizedRegNumber] || {};
       if (demoVotes[normalizedRegNumber][position]) {
-        results.push({
-          position,
-          status: "error",
-          message: `You have already voted for ${position} (demo mode).`,
-        });
-        continue;
+        duplicatePositions.push(position);
       }
+    }
+
+    // If any duplicates found, reject all votes
+    if (duplicatePositions.length > 0) {
+      return candidateIds.map((candidate) => ({
+        position: candidate.position,
+        status: "error",
+        message: duplicatePositions.includes(candidate.position)
+          ? `You have already voted for ${candidate.position} (demo mode). Duplicate voting is not allowed.`
+          : `Cannot process vote: duplicate voting detected for ${duplicatePositions.join(", ")}.`,
+      }));
+    }
+
+    // Process all votes if no duplicates
+    for (const candidate of candidateIds) {
+      const position = candidate.position;
       demoVotes[normalizedRegNumber][position] = candidate._id;
       demoCandidateVotes[candidate._id] = (demoCandidateVotes[candidate._id] || 0) + 1;
       emitVoteEvent(io, candidate, true);
@@ -101,51 +148,106 @@ export const processVotesAtomically = async ({
   try {
     session.startTransaction();
 
-    for (const candidate of candidateIds) {
-      const position = candidate.position;
+    // Pre-check for existing votes BEFORE processing any votes
+    // This ensures we fail fast if voter has already voted for any position
+    const existingVotes = await Vote.find({
+      voterRegNumber: normalizedRegNumber,
+      position: { $in: candidateIds.map((c) => c.position) },
+    }).session(session);
 
-      const alreadyVoted = await Vote.findOne({ voterRegNumber: normalizedRegNumber, position }).session(session);
-      if (alreadyVoted) {
-        results.push({
-          position,
+    if (existingVotes.length > 0) {
+      const duplicatePositions = existingVotes.map((v) => v.position);
+      await session.abortTransaction();
+      return candidateIds.map((candidate) => ({
+        position: candidate.position,
           status: "error",
-          message: `You have already voted for ${position}.`,
-        });
-        continue;
-      }
+        message: duplicatePositions.includes(candidate.position)
+          ? `You have already voted for ${candidate.position}. Each voter can only vote once per position.`
+          : `Cannot process vote: you have already voted for ${duplicatePositions.join(", ")}.`,
+      }));
+    }
 
-      await Vote.create(
-        [{ voterRegNumber: normalizedRegNumber, candidateId: candidate._id, position }],
-        { session }
+    // Verify all candidates exist before creating votes
+    const candidateIdsList = candidateIds.map((c) => new mongoose.Types.ObjectId(c._id));
+    const existingCandidates = await Candidate.find({
+      _id: { $in: candidateIdsList },
+    }).session(session);
+
+    if (existingCandidates.length !== candidateIds.length) {
+      const foundIds = new Set(existingCandidates.map((c) => c._id.toString()));
+      const missingIds = candidateIds.filter((c) => !foundIds.has(c._id));
+      await session.abortTransaction();
+      throw new Error(
+        `One or more candidates not found: ${missingIds.map((c) => c._id).join(", ")}`
       );
+    }
 
-      const { matchedCount } = await Candidate.updateOne(
+    // Process all votes atomically
+    const voteDocuments = candidateIds.map((candidate) => ({
+      voterRegNumber: normalizedRegNumber,
+      candidateId: new mongoose.Types.ObjectId(candidate._id),
+      position: candidate.position,
+    }));
+
+    // Create all votes in batch
+    await Vote.insertMany(voteDocuments, { session });
+
+    // Update vote counts for all candidates
+    const updatePromises = candidateIds.map((candidate) =>
+      Candidate.updateOne(
         { _id: candidate._id },
         { $inc: { totalVotes: 1 } },
         { session }
-      );
-      if (matchedCount === 0) {
-        throw new Error(`Candidate not found for id ${candidate._id}`);
+      )
+    );
+
+    const updateResults = await Promise.all(updatePromises);
+
+    // Verify all updates succeeded
+    for (let i = 0; i < updateResults.length; i++) {
+      if (updateResults[i].matchedCount === 0) {
+        throw new Error(`Failed to update vote count for candidate ${candidateIds[i]._id}`);
       }
-
-      emitVoteEvent(io, candidate, false);
-
-      results.push({
-        position,
-        status: "success",
-        message: `✅ Your vote for "${candidate.name ?? candidate._id}" as "${position}" has been recorded successfully.`,
-      });
+      if (updateResults[i].modifiedCount === 0) {
+        // This shouldn't happen, but log it for debugging
+        console.warn(`Warning: Vote count was not modified for candidate ${candidateIds[i]._id}`);
+      }
     }
+
+    // Emit events for all votes
+    candidateIds.forEach((candidate) => {
+      emitVoteEvent(io, candidate, false);
+    });
+
+    // Create success results
+    candidateIds.forEach((candidate) => {
+      results.push({
+        position: candidate.position,
+        status: "success",
+        message: `✅ Your vote for "${candidate.name ?? candidate._id}" as "${candidate.position}" has been recorded successfully.`,
+      });
+    });
 
     await session.commitTransaction();
     return results;
   } catch (error) {
     await session.abortTransaction();
     console.error("Atomic vote transaction failed:", error);
+    
+    // Check if it's a duplicate key error (MongoDB unique constraint violation)
+    const errorMessage = (error as Error).message;
+    if (errorMessage.includes("duplicate key") || errorMessage.includes("E11000")) {
+      return candidateIds.map((candidate) => ({
+        position: candidate.position,
+        status: "error",
+        message: `You have already voted for ${candidate.position}. Duplicate voting is not allowed.`,
+      }));
+    }
+
     return candidateIds.map((candidate) => ({
       position: candidate.position,
       status: "error",
-      message: (error as Error).message || "Vote failed.",
+      message: errorMessage || "Vote failed. Please try again.",
     }));
   } finally {
     session.endSession();
@@ -236,6 +338,23 @@ export const castVote = asyncHandler(async (req: Request<unknown, unknown, CastV
     seenPositions.add(candidate.position);
   }
 
+  // Pre-check for existing votes BEFORE processing (for non-demo votes)
+  if (!isDemo) {
+    const existingVotes = await Vote.find({
+      voterRegNumber: normalizedRegNumber,
+      position: { $in: preparedCandidateInputs.map((c) => c.position) },
+    });
+
+    if (existingVotes.length > 0) {
+      const duplicatePositions = existingVotes.map((v) => v.position);
+      return res.status(400).json({
+        success: false,
+        message: `You have already voted for the following position(s): ${duplicatePositions.join(", ")}. Each voter can only vote once per position.`,
+        duplicatePositions,
+      });
+    }
+  }
+
   const results = await processVotesAtomically({
     voterRegNumber: normalizedRegNumber,
     candidateIds: preparedCandidateInputs,
@@ -243,9 +362,15 @@ export const castVote = asyncHandler(async (req: Request<unknown, unknown, CastV
     io,
   });
 
-  res.status(200).json({
-    success: true,
-    message: "Vote submission complete.",
+  // Check if any votes failed
+  const hasErrors = results.some((result) => result.status === "error");
+  const statusCode = hasErrors ? (results.every((r) => r.status === "error") ? 400 : 207) : 200;
+
+  res.status(statusCode).json({
+    success: !hasErrors,
+    message: hasErrors
+      ? "Some votes could not be processed. Please check the results."
+      : "Vote submission complete.",
     results,
   });
 });
@@ -253,16 +378,34 @@ export const castVote = asyncHandler(async (req: Request<unknown, unknown, CastV
 export const getVoteSummary = asyncHandler(async (_req: Request, res: Response) => {
   const candidates = await Candidate.find();
 
+  // Get actual vote counts from Vote collection to ensure accuracy
+  const voteCountsMap = new Map<string, number>();
+  const voteCounts = await Vote.aggregate([
+    {
+      $group: {
+        _id: "$candidateId",
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  voteCounts.forEach((vc) => {
+    voteCountsMap.set(vc._id.toString(), vc.count);
+  });
+
   const summary = candidates.reduce<Record<string, Array<Record<string, unknown>>>>((acc, candidate) => {
     const position = candidate.position || "Unknown";
     const demoTotal = demoCandidateVotes[candidate._id.toString()] ?? 0;
+    // Use actual vote count from Vote collection, fallback to stored totalVotes
+    const actualVoteCount = voteCountsMap.get(candidate._id.toString()) ?? candidate.totalVotes ?? 0;
+    
     if (!acc[position]) acc[position] = [];
     acc[position].push({
       id: candidate._id,
       name: candidate.name,
       department: candidate.department,
       image: candidate.image,
-      totalVotes: candidate.totalVotes || 0,
+      totalVotes: actualVoteCount,
       demoVotes: demoTotal,
     });
     return acc;
@@ -272,12 +415,29 @@ export const getVoteSummary = asyncHandler(async (_req: Request, res: Response) 
 });
 
 export const resetAllVotes = asyncHandler(async (_req: Request, res: Response) => {
-  await Vote.deleteMany({});
-  await Candidate.updateMany({}, { $set: { totalVotes: 0 } });
+  const session = await mongoose.startSession();
+  
+  try {
+    session.startTransaction();
 
+    // Delete all votes first
+    await Vote.deleteMany({}).session(session);
+    
+    // Reset all candidate vote counts
+    await Candidate.updateMany({}, { $set: { totalVotes: 0 } }).session(session);
+
+    await session.commitTransaction();
+    
+    // Clear demo vote caches (outside transaction as it's in-memory)
   clearAllDemoVoteCaches();
 
   res.status(200).json({ success: true, message: "All votes have been reset." });
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
 });
 
 export const resetVotes = asyncHandler(async (req: Request<unknown, unknown, { position?: string }>, res: Response) => {
@@ -286,17 +446,42 @@ export const resetVotes = asyncHandler(async (req: Request<unknown, unknown, { p
     return res.status(400).json({ success: false, message: "Position is required." });
   }
 
-  const candidates = await Candidate.find({ position }, { _id: 1 });
+  const session = await mongoose.startSession();
+  
+  try {
+    session.startTransaction();
 
-  await Vote.deleteMany({ position });
-  await Candidate.updateMany({ position }, { $set: { totalVotes: 0 } });
+    // Get candidates for this position
+    const candidates = await Candidate.find({ position }, { _id: 1 }).session(session);
 
+    // Delete all votes for this position
+    await Vote.deleteMany({ position }).session(session);
+    
+    // Recalculate vote counts for candidates in this position from remaining votes
+    // (in case there are votes for other positions, we need to preserve those counts)
+    for (const candidate of candidates) {
+      const remainingVoteCount = await Vote.countDocuments({ candidateId: candidate._id }).session(session);
+      await Candidate.updateOne(
+        { _id: candidate._id },
+        { $set: { totalVotes: remainingVoteCount } }
+      ).session(session);
+    }
+
+    await session.commitTransaction();
+    
+    // Clear demo vote caches (outside transaction as it's in-memory)
   clearDemoVoteCachesForPosition(
     position,
     candidates.map((candidate) => candidate._id.toString())
   );
 
   res.status(200).json({ success: true, message: `Votes for position "${position}" have been reset.` });
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
 });
 
 export const resetDemoVotes = asyncHandler(async (_req: Request, res: Response) => {
@@ -304,5 +489,22 @@ export const resetDemoVotes = asyncHandler(async (_req: Request, res: Response) 
   await Candidate.updateMany({}, { $set: { totalVotes: 0 } });
 
   res.status(200).json({ success: true, message: "Demo votes have been reset." });
+});
+
+/**
+ * Admin endpoint to verify and sync vote counts
+ * This ensures Candidate.totalVotes matches actual Vote document counts
+ */
+export const verifyVoteCounts = asyncHandler(async (_req: Request, res: Response) => {
+  const result = await verifyAndSyncVoteCounts();
+  
+  res.status(200).json({
+    success: true,
+    message: result.synced > 0 
+      ? `Verified and synced ${result.synced} candidate vote count(s).`
+      : "All vote counts are accurate. No discrepancies found.",
+    synced: result.synced,
+    discrepancies: result.discrepancies,
+  });
 });
 
