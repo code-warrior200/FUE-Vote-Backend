@@ -1,5 +1,5 @@
 import express from "express";
-import { castVote, getVoteSummary, resetDemoVotes } from "../controllers/voteController";
+import { castVote, getVoteSummary, resetDemoVotes, getRealtimeVoteCounts } from "../controllers/voteController";
 import { protect, voterOnly, adminOnly } from "../middleware/authMiddleware";
 
 const router = express.Router();
@@ -349,6 +349,113 @@ router.get("/summary", getVoteSummary);
  *         description: Internal server error
  */
 router.post("/demo/reset", protect, adminOnly, resetDemoVotes);
+
+/**
+ * @swagger
+ * /api/vote/realtime:
+ *   get:
+ *     summary: Get real-time vote counts for candidates
+ *     description: |
+ *       Retrieve real-time vote counts for specific candidates or all candidates.
+ *       This endpoint provides up-to-date vote counts directly from the Vote collection,
+ *       ensuring accuracy and real-time data.
+ *       
+ *       **Query Parameters:**
+ *       - `candidateIds` (optional): Comma-separated list of candidate IDs. If not provided, returns counts for all candidates.
+ *       
+ *       **Response includes:**
+ *       - Candidate ID, name, position, department
+ *       - Current vote count (from Vote collection)
+ *       - Demo votes (if any)
+ *       - Timestamp
+ *     tags: [Votes]
+ *     parameters:
+ *       - in: query
+ *         name: candidateIds
+ *         schema:
+ *           type: string
+ *         description: Comma-separated list of candidate IDs (e.g., "id1,id2,id3")
+ *         example: "507f1f77bcf86cd799439011,507f1f77bcf86cd799439012"
+ *     responses:
+ *       200:
+ *         description: Real-time vote counts retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 counts:
+ *                   type: array
+ *                   description: Array of candidate vote counts
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       candidateId:
+ *                         type: string
+ *                         example: "507f1f77bcf86cd799439011"
+ *                       candidateName:
+ *                         type: string
+ *                         example: "John Doe"
+ *                       position:
+ *                         type: string
+ *                         example: "President"
+ *                       department:
+ *                         type: string
+ *                         example: "Computer Science"
+ *                       voteCount:
+ *                         type: number
+ *                         description: Current vote count from Vote collection
+ *                         example: 120
+ *                       demoVotes:
+ *                         type: number
+ *                         description: Demo votes (if any)
+ *                         example: 5
+ *                       timestamp:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2024-01-15T10:30:00.000Z"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00.000Z"
+ *             example:
+ *               success: true
+ *               counts:
+ *                 - candidateId: "507f1f77bcf86cd799439011"
+ *                   candidateName: "John Doe"
+ *                   position: "President"
+ *                   department: "Computer Science"
+ *                   voteCount: 120
+ *                   demoVotes: 5
+ *                   timestamp: "2024-01-15T10:30:00.000Z"
+ *                 - candidateId: "507f1f77bcf86cd799439012"
+ *                   candidateName: "Jane Smith"
+ *                   position: "Vice President"
+ *                   department: "Mathematics"
+ *                   voteCount: 85
+ *                   demoVotes: 3
+ *                   timestamp: "2024-01-15T10:30:00.000Z"
+ *               timestamp: "2024-01-15T10:30:00.000Z"
+ *       400:
+ *         description: Invalid candidate IDs provided
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Invalid candidate IDs: invalid_id1, invalid_id2"
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/realtime", getRealtimeVoteCounts);
 
 export default router;
 
