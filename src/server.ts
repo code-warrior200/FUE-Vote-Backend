@@ -68,6 +68,34 @@ app.use(errorHandler);
 io.on("connection", (socket: Socket) => {
   console.log("🔌 Client connected:", socket.id);
 
+  // Subscribe to vote count updates for specific candidates
+  socket.on("subscribe_vote_counts", (data: { candidateIds?: string[] }) => {
+    if (data?.candidateIds && Array.isArray(data.candidateIds)) {
+      // Join rooms for specific candidates
+      data.candidateIds.forEach((candidateId) => {
+        socket.join(`candidate:${candidateId}`);
+      });
+      console.log(`📊 Client ${socket.id} subscribed to vote counts for candidates:`, data.candidateIds);
+    } else {
+      // Subscribe to all vote count updates
+      socket.join("vote_counts:all");
+      console.log(`📊 Client ${socket.id} subscribed to all vote count updates`);
+    }
+  });
+
+  // Unsubscribe from vote count updates
+  socket.on("unsubscribe_vote_counts", (data: { candidateIds?: string[] }) => {
+    if (data?.candidateIds && Array.isArray(data.candidateIds)) {
+      data.candidateIds.forEach((candidateId) => {
+        socket.leave(`candidate:${candidateId}`);
+      });
+      console.log(`📊 Client ${socket.id} unsubscribed from vote counts for candidates:`, data.candidateIds);
+    } else {
+      socket.leave("vote_counts:all");
+      console.log(`📊 Client ${socket.id} unsubscribed from all vote count updates`);
+    }
+  });
+
   socket.on("disconnect", () => {
     console.log("❌ Client disconnected:", socket.id);
   });

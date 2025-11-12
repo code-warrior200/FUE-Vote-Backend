@@ -68,18 +68,148 @@ const clearDemoVoteCachesForPosition = (position: string, candidateIds: string[]
   });
 };
 
-const emitVoteEvent = (
+/**
+ * Get real-time vote counts for candidates
+ */
+const getCandidateVoteCounts = async (candidateIds: string[]): Promise<Map<string, number>> => {
+  const voteCountsMap = new Map<string, number>();
+  
+  if (candidateIds.length === 0) {
+    return voteCountsMap;
+  }
+
+  const voteCounts = await Vote.aggregate([
+    {
+      $match: {
+        candidateId: { $in: candidateIds.map((id) => new mongoose.Types.ObjectId(id)) },
+      },
+    },
+    {
+      $group: {
+        _id: "$candidateId",
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  voteCounts.forEach((vc) => {
+    voteCountsMap.set(vc._id.toString(), vc.count);
+  });
+
+  // Ensure all candidate IDs are in the map (with 0 if no votes)
+  candidateIds.forEach((id) => {
+    if (!voteCountsMap.has(id)) {
+      voteCountsMap.set(id, 0);
+    }
+  });
+
+  return voteCountsMap;
+};
+
+/**
+ * Emit vote cast event with real-time vote counts
+ */
+const emitVoteEvent = async (
   io: SocketIOServer | undefined,
   candidate: { _id: mongoose.Types.ObjectId | string; position: string },
-  isDemo: boolean
+  isDemo: boolean,
+  voteCount?: number
 ) => {
   if (io) {
+    const candidateId = candidate._id.toString();
+    
+    // If vote count not provided, fetch it
+    let actualVoteCount = voteCount;
+    if (actualVoteCount === undefined) {
+      const counts = await getCandidateVoteCounts([candidateId]);
+      actualVoteCount = counts.get(candidateId) ?? 0;
+    }
+
     io.emit("vote_cast", {
-      candidateId: candidate._id,
+      candidateId,
       position: candidate.position,
       isDemo,
+      voteCount: actualVoteCount,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Also emit a specific event for vote count updates
+    io.emit("vote_count_update", {
+      candidateId,
+      position: candidate.position,
+      voteCount: actualVoteCount,
+      isDemo,
+      timestamp: new Date().toISOString(),
     });
   }
+};
+
+/**
+ * Emit vote count updates for multiple candidates
+ * Supports Socket.IO rooms for targeted updates
+ */
+const emitVoteCountUpdates = async (
+  io: SocketIOServer | undefined,
+  candidateIds: string[]
+) => {
+  if (!io || candidateIds.length === 0) {
+    return;
+  }
+
+  const voteCounts = await getCandidateVoteCounts(candidateIds);
+  
+  // Get candidate details for the update
+  const candidates = await Candidate.find({
+    _id: { $in: candidateIds.map((id) => new mongoose.Types.ObjectId(id)) },
+  });
+
+  const updates = candidates.map((candidate) => {
+    const candidateId = candidate._id.toString();
+    return {
+      candidateId,
+      position: candidate.position,
+      voteCount: voteCounts.get(candidateId) ?? 0,
+      candidateName: candidate.name,
+      department: candidate.department,
+      demoVotes: demoCandidateVotes[candidateId] ?? 0,
+    };
+  });
+
+  const timestamp = new Date().toISOString();
+
+  // Emit bulk update to all clients
+  io.emit("vote_counts_bulk_update", {
+    updates,
+    timestamp,
+  });
+
+  // Emit to clients subscribed to all updates
+  io.to("vote_counts:all").emit("vote_counts_bulk_update", {
+    updates,
+    timestamp,
+  });
+
+  // Emit individual updates for each candidate to specific rooms and all clients
+  updates.forEach((update) => {
+    const updateData = {
+      candidateId: update.candidateId,
+      position: update.position,
+      voteCount: update.voteCount,
+      candidateName: update.candidateName,
+      department: update.department,
+      demoVotes: update.demoVotes,
+      timestamp,
+    };
+
+    // Emit to all clients
+    io.emit("vote_count_update", updateData);
+
+    // Emit to clients subscribed to this specific candidate
+    io.to(`candidate:${update.candidateId}`).emit("vote_count_update", updateData);
+
+    // Also emit to clients subscribed to all updates
+    io.to("vote_counts:all").emit("vote_count_update", updateData);
+  });
 };
 
 interface CandidateVoteInput {
@@ -104,7 +234,7 @@ export const processVotesAtomically = async ({
   const normalizedRegNumber = voterRegNumber.toUpperCase();
 
   if (isDemo) {
-    const results: Array<{ position: string; status: string; message: string }> = [];
+    const results: Array<{ position: string; status: string; message: string; voteCount?: number }> = [];
     const duplicatePositions: string[] = [];
     
     // Check for duplicates first
@@ -132,18 +262,25 @@ export const processVotesAtomically = async ({
       const position = candidate.position;
       demoVotes[normalizedRegNumber][position] = candidate._id;
       demoCandidateVotes[candidate._id] = (demoCandidateVotes[candidate._id] || 0) + 1;
-      emitVoteEvent(io, candidate, true);
+      
+      // Emit vote event with updated vote count
+      await emitVoteEvent(io, candidate, true, demoCandidateVotes[candidate._id]);
+      
       results.push({
         position,
         status: "success",
         message: `✅ Your vote for "${candidate.name ?? candidate._id}" as "${position}" has been recorded (demo mode).`,
       });
     }
+    
+    // Emit bulk vote count updates for all candidates
+    await emitVoteCountUpdates(io, candidateIds.map((c) => c._id));
+    
     return results;
   }
 
   const session = await mongoose.startSession();
-  const results: Array<{ position: string; status: string; message: string }> = [];
+  const results: Array<{ position: string; status: string; message: string; voteCount?: number }> = [];
 
   try {
     session.startTransaction();
@@ -214,21 +351,31 @@ export const processVotesAtomically = async ({
       }
     }
 
-    // Emit events for all votes
-    candidateIds.forEach((candidate) => {
-      emitVoteEvent(io, candidate, false);
-    });
+    await session.commitTransaction();
+
+    // Get updated vote counts after transaction commits
+    const updatedVoteCounts = await getCandidateVoteCounts(candidateIds.map((c) => c._id));
+
+    // Emit events for all votes with real-time vote counts
+    for (const candidate of candidateIds) {
+      const voteCount = updatedVoteCounts.get(candidate._id) ?? 0;
+      await emitVoteEvent(io, candidate, false, voteCount);
+    }
+
+    // Emit bulk vote count updates for all candidates
+    await emitVoteCountUpdates(io, candidateIds.map((c) => c._id));
 
     // Create success results
     candidateIds.forEach((candidate) => {
+      const voteCount = updatedVoteCounts.get(candidate._id) ?? 0;
       results.push({
         position: candidate.position,
         status: "success",
         message: `✅ Your vote for "${candidate.name ?? candidate._id}" as "${candidate.position}" has been recorded successfully.`,
+        voteCount, // Include vote count in response
       });
     });
 
-    await session.commitTransaction();
     return results;
   } catch (error) {
     await session.abortTransaction();
@@ -414,11 +561,16 @@ export const getVoteSummary = asyncHandler(async (_req: Request, res: Response) 
   res.status(200).json(summary);
 });
 
-export const resetAllVotes = asyncHandler(async (_req: Request, res: Response) => {
+export const resetAllVotes = asyncHandler(async (req: Request, res: Response) => {
   const session = await mongoose.startSession();
+  const io = req.app.get("io") as SocketIOServer | undefined;
   
   try {
     session.startTransaction();
+
+    // Get all candidates before deleting votes
+    const allCandidates = await Candidate.find({}, { _id: 1 }).session(session);
+    const candidateIds = allCandidates.map((c) => c._id.toString());
 
     // Delete all votes first
     await Vote.deleteMany({}).session(session);
@@ -429,9 +581,14 @@ export const resetAllVotes = asyncHandler(async (_req: Request, res: Response) =
     await session.commitTransaction();
     
     // Clear demo vote caches (outside transaction as it's in-memory)
-  clearAllDemoVoteCaches();
+    clearAllDemoVoteCaches();
 
-  res.status(200).json({ success: true, message: "All votes have been reset." });
+    // Emit vote count updates for all candidates (all will be 0)
+    if (io && candidateIds.length > 0) {
+      await emitVoteCountUpdates(io, candidateIds);
+    }
+
+    res.status(200).json({ success: true, message: "All votes have been reset." });
   } catch (error) {
     await session.abortTransaction();
     throw error;
@@ -447,12 +604,14 @@ export const resetVotes = asyncHandler(async (req: Request<unknown, unknown, { p
   }
 
   const session = await mongoose.startSession();
+  const io = req.app.get("io") as SocketIOServer | undefined;
   
   try {
     session.startTransaction();
 
     // Get candidates for this position
     const candidates = await Candidate.find({ position }, { _id: 1 }).session(session);
+    const candidateIds = candidates.map((c) => c._id.toString());
 
     // Delete all votes for this position
     await Vote.deleteMany({ position }).session(session);
@@ -470,12 +629,14 @@ export const resetVotes = asyncHandler(async (req: Request<unknown, unknown, { p
     await session.commitTransaction();
     
     // Clear demo vote caches (outside transaction as it's in-memory)
-  clearDemoVoteCachesForPosition(
-    position,
-    candidates.map((candidate) => candidate._id.toString())
-  );
+    clearDemoVoteCachesForPosition(position, candidateIds);
 
-  res.status(200).json({ success: true, message: `Votes for position "${position}" have been reset.` });
+    // Emit vote count updates for affected candidates
+    if (io && candidateIds.length > 0) {
+      await emitVoteCountUpdates(io, candidateIds);
+    }
+
+    res.status(200).json({ success: true, message: `Votes for position "${position}" have been reset.` });
   } catch (error) {
     await session.abortTransaction();
     throw error;
@@ -507,4 +668,60 @@ export const verifyVoteCounts = asyncHandler(async (_req: Request, res: Response
     discrepancies: result.discrepancies,
   });
 });
+
+/**
+ * Get real-time vote counts for specific candidates or all candidates
+ */
+export const getRealtimeVoteCounts = asyncHandler(async (req: Request, res: Response) => {
+  const { candidateIds } = req.query;
+  
+  let candidateIdsArray: string[] = [];
+  
+  if (candidateIds) {
+    if (typeof candidateIds === "string") {
+      candidateIdsArray = candidateIds.split(",").map((id) => id.trim());
+    } else if (Array.isArray(candidateIds)) {
+      candidateIdsArray = candidateIds.map((id) => String(id).trim());
+    }
+    
+    // Validate ObjectIds
+    const invalidIds = candidateIdsArray.filter((id) => !isValidObjectId(id));
+    if (invalidIds.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid candidate IDs: ${invalidIds.join(", ")}`,
+      });
+    }
+  }
+
+  // If no candidate IDs provided, get all candidates
+  if (candidateIdsArray.length === 0) {
+    const allCandidates = await Candidate.find({}, { _id: 1 });
+    candidateIdsArray = allCandidates.map((c) => c._id.toString());
+  }
+
+  const voteCounts = await getCandidateVoteCounts(candidateIdsArray);
+  
+  // Get candidate details
+  const candidates = await Candidate.find({
+    _id: { $in: candidateIdsArray.map((id) => new mongoose.Types.ObjectId(id)) },
+  });
+
+  const result = candidates.map((candidate) => ({
+    candidateId: candidate._id.toString(),
+    candidateName: candidate.name,
+    position: candidate.position,
+    department: candidate.department,
+    voteCount: voteCounts.get(candidate._id.toString()) ?? 0,
+    demoVotes: demoCandidateVotes[candidate._id.toString()] ?? 0,
+    timestamp: new Date().toISOString(),
+  }));
+
+  res.status(200).json({
+    success: true,
+    counts: result,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 
