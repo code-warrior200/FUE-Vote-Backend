@@ -52,12 +52,15 @@ const clearAllDemoVoteCaches = () => {
 };
 
 const clearDemoVoteCachesForPosition = (position: string, candidateIds: string[]) => {
+  // Clear demo votes by candidateId (since we now store by candidateId)
   Object.keys(demoVotes).forEach((regNumber) => {
-    if (demoVotes[regNumber]?.[position]) {
-      delete demoVotes[regNumber][position];
-      if (Object.keys(demoVotes[regNumber]).length === 0) {
-        delete demoVotes[regNumber];
+    candidateIds.forEach((candidateId) => {
+      if (demoVotes[regNumber]?.[candidateId]) {
+        delete demoVotes[regNumber][candidateId];
       }
+    });
+    if (Object.keys(demoVotes[regNumber] || {}).length === 0) {
+      delete demoVotes[regNumber];
     }
   });
 
@@ -235,32 +238,37 @@ export const processVotesAtomically = async ({
 
   if (isDemo) {
     const results: Array<{ position: string; status: string; message: string; voteCount?: number }> = [];
-    const duplicatePositions: string[] = [];
+    const duplicateCandidates: string[] = [];
     
-    // Check for duplicates first
+    // Check for duplicates first (by candidateId)
     for (const candidate of candidateIds) {
-      const position = candidate.position;
       demoVotes[normalizedRegNumber] = demoVotes[normalizedRegNumber] || {};
-      if (demoVotes[normalizedRegNumber][position]) {
-        duplicatePositions.push(position);
+      // Check if voter has already voted for this candidate
+      const existingCandidateId = Object.values(demoVotes[normalizedRegNumber]).find(
+        (votedCandidateId) => votedCandidateId === candidate._id
+      );
+      if (existingCandidateId) {
+        duplicateCandidates.push(candidate._id);
       }
     }
 
     // If any duplicates found, reject all votes
-    if (duplicatePositions.length > 0) {
+    if (duplicateCandidates.length > 0) {
       return candidateIds.map((candidate) => ({
         position: candidate.position,
         status: "error",
-        message: duplicatePositions.includes(candidate.position)
-          ? `You have already voted for ${candidate.position} (demo mode). Duplicate voting is not allowed.`
-          : `Cannot process vote: duplicate voting detected for ${duplicatePositions.join(", ")}.`,
+        message: duplicateCandidates.includes(candidate._id)
+          ? `You have already voted for "${candidate.name ?? candidate._id}" (demo mode). Each voter can only vote once per candidate.`
+          : `Cannot process vote: duplicate voting detected for candidate(s).`,
       }));
     }
 
     // Process all votes if no duplicates
     for (const candidate of candidateIds) {
       const position = candidate.position;
-      demoVotes[normalizedRegNumber][position] = candidate._id;
+      // Store by candidateId instead of position
+      demoVotes[normalizedRegNumber] = demoVotes[normalizedRegNumber] || {};
+      demoVotes[normalizedRegNumber][candidate._id] = candidate._id;
       demoCandidateVotes[candidate._id] = (demoCandidateVotes[candidate._id] || 0) + 1;
       
       // Emit vote event with updated vote count
@@ -286,26 +294,26 @@ export const processVotesAtomically = async ({
     session.startTransaction();
 
     // Pre-check for existing votes BEFORE processing any votes
-    // This ensures we fail fast if voter has already voted for any position
+    // This ensures we fail fast if voter has already voted for any candidate
+    const candidateIdsList = candidateIds.map((c) => new mongoose.Types.ObjectId(c._id));
     const existingVotes = await Vote.find({
       voterRegNumber: normalizedRegNumber,
-      position: { $in: candidateIds.map((c) => c.position) },
+      candidateId: { $in: candidateIdsList },
     }).session(session);
 
     if (existingVotes.length > 0) {
-      const duplicatePositions = existingVotes.map((v) => v.position);
+      const duplicateCandidateIds = existingVotes.map((v) => v.candidateId.toString());
       await session.abortTransaction();
       return candidateIds.map((candidate) => ({
         position: candidate.position,
-          status: "error",
-        message: duplicatePositions.includes(candidate.position)
-          ? `You have already voted for ${candidate.position}. Each voter can only vote once per position.`
-          : `Cannot process vote: you have already voted for ${duplicatePositions.join(", ")}.`,
+        status: "error",
+        message: duplicateCandidateIds.includes(candidate._id)
+          ? `You have already voted for "${candidate.name ?? candidate._id}". Each voter can only vote once per candidate.`
+          : `Cannot process vote: you have already voted for one or more of these candidates.`,
       }));
     }
 
     // Verify all candidates exist before creating votes
-    const candidateIdsList = candidateIds.map((c) => new mongoose.Types.ObjectId(c._id));
     const existingCandidates = await Candidate.find({
       _id: { $in: candidateIdsList },
     }).session(session);
@@ -387,7 +395,7 @@ export const processVotesAtomically = async ({
       return candidateIds.map((candidate) => ({
         position: candidate.position,
         status: "error",
-        message: `You have already voted for ${candidate.position}. Duplicate voting is not allowed.`,
+        message: `You have already voted for "${candidate.name ?? candidate._id}". Each voter can only vote once per candidate.`,
       }));
     }
 
@@ -467,7 +475,7 @@ export const castVote = asyncHandler(async (req: Request<unknown, unknown, CastV
     };
   });
 
-  const seenPositions = new Set<string>();
+  // Validate that all candidates have positions configured
   for (const candidate of preparedCandidateInputs) {
     if (!candidate.position) {
       return res.status(500).json({
@@ -475,29 +483,37 @@ export const castVote = asyncHandler(async (req: Request<unknown, unknown, CastV
         message: `Candidate "${candidate._id}" has no position configured.`,
       });
     }
+  }
 
-    if (seenPositions.has(candidate.position)) {
+  // Check for duplicate candidates in the same request
+  const seenCandidateIds = new Set<string>();
+  for (const candidate of preparedCandidateInputs) {
+    if (seenCandidateIds.has(candidate._id)) {
       return res.status(400).json({
         success: false,
-        message: "You can only vote for one candidate per position in a single submission.",
+        message: `You cannot vote for the same candidate "${candidate.name ?? candidate._id}" multiple times in a single submission.`,
       });
     }
-    seenPositions.add(candidate.position);
+    seenCandidateIds.add(candidate._id);
   }
 
   // Pre-check for existing votes BEFORE processing (for non-demo votes)
   if (!isDemo) {
+    const candidateIdsToCheck = preparedCandidateInputs.map((c) => new mongoose.Types.ObjectId(c._id));
     const existingVotes = await Vote.find({
       voterRegNumber: normalizedRegNumber,
-      position: { $in: preparedCandidateInputs.map((c) => c.position) },
+      candidateId: { $in: candidateIdsToCheck },
     });
 
     if (existingVotes.length > 0) {
-      const duplicatePositions = existingVotes.map((v) => v.position);
+      const duplicateCandidateIds = existingVotes.map((v) => v.candidateId.toString());
+      const duplicateCandidates = preparedCandidateInputs
+        .filter((c) => duplicateCandidateIds.includes(c._id))
+        .map((c) => c.name ?? c._id);
       return res.status(400).json({
         success: false,
-        message: `You have already voted for the following position(s): ${duplicatePositions.join(", ")}. Each voter can only vote once per position.`,
-        duplicatePositions,
+        message: `You have already voted for the following candidate(s): ${duplicateCandidates.join(", ")}. Each voter can only vote once per candidate.`,
+        duplicateCandidateIds,
       });
     }
   }
