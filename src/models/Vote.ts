@@ -30,7 +30,7 @@ const voteSchema = new Schema<VoteDocument>(
   { timestamps: true }
 );
 
-voteSchema.index({ voterRegNumber: 1, position: 1 }, { unique: true });
+voteSchema.index({ voterRegNumber: 1, candidateId: 1 }, { unique: true });
 
 export const Vote: VoteModel = model<VoteDocument, VoteModel>("Vote", voteSchema);
 

@@ -31,9 +31,9 @@ const router = express.Router();
  *       ```
  *       
  *       **Important Notes:**
- *       - Each voter can only vote once per position
- *       - If a voter has already voted for a position, the new vote will replace the previous vote
- *       - Voters cannot vote for multiple candidates in the same position in a single submission
+ *       - Each voter can only vote once per candidate
+ *       - If a voter has already voted for a candidate, they cannot vote for that candidate again
+ *       - Voters can vote for multiple candidates (even in the same position) as long as they are different candidates
  *       - The voter's registration number is automatically extracted from the JWT token
  *       - Votes are processed atomically (all or nothing)
  *     tags: [Votes]
@@ -159,7 +159,7 @@ const router = express.Router();
  *                     - "Invalid request body. Provide candidateId/position or votes array."
  *                     - "Missing voter registration number"
  *                     - "Invalid candidate ID: invalid_id"
- *                     - "You can only vote for one candidate per position in a single submission."
+ *                     - "You cannot vote for the same candidate multiple times in a single submission."
  *       401:
  *         description: Unauthorized - missing or invalid JWT token
  *         content:
