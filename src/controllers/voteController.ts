@@ -418,9 +418,12 @@ interface CastVoteBody {
 }
 
 export const castVote = asyncHandler(async (req: Request<unknown, unknown, CastVoteBody>, res: Response) => {
-  const { candidateId, position, votes, isDemo } = req.body;
+  const { candidateId, position, votes, isDemo: isDemoFromBody } = req.body;
   const voterRegNumber = req.user?.regnumber || req.body.voterRegNumber;
   const io = req.app.get("io") as SocketIOServer | undefined;
+
+  // Use isDemo from user token (set during login) as primary source, with body override
+  const isDemo = isDemoFromBody !== undefined ? isDemoFromBody : (req.user?.isDemo ?? false);
 
   if (!voterRegNumber || typeof voterRegNumber !== "string" || !voterRegNumber.trim()) {
     return res.status(400).json({ success: false, message: "Missing voter registration number" });
