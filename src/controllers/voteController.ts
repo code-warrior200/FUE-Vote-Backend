@@ -297,10 +297,22 @@ export const processVotesAtomically = async ({
     // Pre-check for existing votes BEFORE processing any votes
     // This ensures we fail fast if voter has already voted for any candidate
     const candidateIdsList = candidateIds.map((c) => new mongoose.Types.ObjectId(c._id));
+    
+    // Log for debugging - ensure we're checking the correct regnumber
+    console.log(`[ProcessVotes] Checking votes for regnumber: ${normalizedRegNumber}, candidates: ${candidateIdsList.map(id => id.toString()).join(", ")}`);
+    
     const existingVotes = await Vote.find({
       voterRegNumber: normalizedRegNumber,
       candidateId: { $in: candidateIdsList },
     }).session(session);
+
+    // Log found votes for debugging
+    if (existingVotes.length > 0) {
+      console.log(`[ProcessVotes] Found ${existingVotes.length} existing vote(s) for regnumber: ${normalizedRegNumber}`);
+      existingVotes.forEach(vote => {
+        console.log(`[ProcessVotes] - Vote ID: ${vote._id}, RegNumber: ${vote.voterRegNumber}, CandidateID: ${vote.candidateId}`);
+      });
+    }
 
     if (existingVotes.length > 0) {
       const duplicateCandidateIds = existingVotes.map((v) => v.candidateId.toString());
@@ -330,13 +342,28 @@ export const processVotesAtomically = async ({
 
     // Process all votes atomically
     const voteDocuments = candidateIds.map((candidate) => ({
-      voterRegNumber: normalizedRegNumber,
+      voterRegNumber: normalizedRegNumber, // Ensure uppercase and trimmed
       candidateId: new mongoose.Types.ObjectId(candidate._id),
       position: candidate.position,
     }));
 
+    // Log vote documents being created for debugging
+    console.log(`[ProcessVotes] Creating ${voteDocuments.length} vote(s) for regnumber: ${normalizedRegNumber}`);
+    voteDocuments.forEach((doc, idx) => {
+      console.log(`[ProcessVotes] - Vote ${idx + 1}: RegNumber="${doc.voterRegNumber}", CandidateID=${doc.candidateId}, Position="${doc.position}"`);
+    });
+
     // Create all votes in batch
-    await Vote.insertMany(voteDocuments, { session });
+    const insertedVotes = await Vote.insertMany(voteDocuments, { session });
+    
+    // Verify the inserted votes have the correct regnumber
+    insertedVotes.forEach((vote, idx) => {
+      if (vote.voterRegNumber !== normalizedRegNumber) {
+        console.error(`[ProcessVotes] ERROR: Vote ${idx + 1} has incorrect regnumber! Expected: ${normalizedRegNumber}, Got: ${vote.voterRegNumber}`);
+      } else {
+        console.log(`[ProcessVotes] ✓ Vote ${idx + 1} created successfully with regnumber: ${vote.voterRegNumber}, ID: ${vote._id}`);
+      }
+    });
 
     // Update vote counts for all candidates
     const updatePromises = candidateIds.map((candidate) =>
@@ -427,7 +454,22 @@ export const castVote = asyncHandler(async (req: Request<unknown, unknown, CastV
     return res.status(400).json({ success: false, message: "Missing voter registration number" });
   }
 
-  const normalizedRegNumber = voterRegNumber.trim().toUpperCase();
+  let normalizedRegNumber = voterRegNumber.trim().toUpperCase();
+  
+  // Verify that the regnumber from the token matches what we're using (if available)
+  // Use the regnumber from the token as the source of truth to ensure consistency
+  if (req.user?.regnumber) {
+    const normalizedUserRegNumber = req.user.regnumber.trim().toUpperCase();
+    if (normalizedUserRegNumber !== normalizedRegNumber) {
+      console.warn(`[CastVote] WARNING: Regnumber mismatch! Token has: ${normalizedUserRegNumber}, but request has: ${normalizedRegNumber}`);
+      // Use the regnumber from the token as the source of truth
+      normalizedRegNumber = normalizedUserRegNumber;
+      console.log(`[CastVote] Using corrected regnumber from token: ${normalizedRegNumber}`);
+    }
+  }
+
+  // Log the voter information for debugging
+  console.log(`[CastVote] Final voter regnumber: ${normalizedRegNumber}, req.user.regnumber: ${req.user?.regnumber}, req.user.isDemo: ${req.user?.isDemo}`);
 
   // Check if this voter is in the official voters list - if so, force real voting (store in MongoDB)
   const officialVoters = voters.map((v) => v.regnumber.toUpperCase());
@@ -438,7 +480,10 @@ export const castVote = asyncHandler(async (req: Request<unknown, unknown, CastV
   let isDemo = isDemoFromBody !== undefined ? isDemoFromBody : (req.user?.isDemo ?? false);
   if (isOfficialVoter) {
     isDemo = false; // Force official voters to vote as real voters (stored in MongoDB)
+    console.log(`[CastVote] Official voter detected: ${normalizedRegNumber}, forcing real vote (isDemo=false)`);
   }
+  
+  console.log(`[CastVote] Final isDemo value: ${isDemo} for regnumber: ${normalizedRegNumber}`);
 
   let candidateInputs: CandidateVoteInput[] = [];
 
@@ -512,10 +557,22 @@ export const castVote = asyncHandler(async (req: Request<unknown, unknown, CastV
   // Pre-check for existing votes BEFORE processing (for non-demo votes)
   if (!isDemo) {
     const candidateIdsToCheck = preparedCandidateInputs.map((c) => new mongoose.Types.ObjectId(c._id));
+    
+    // Log for debugging - ensure we're checking the correct regnumber
+    console.log(`[Vote Check] Checking votes for regnumber: ${normalizedRegNumber}, candidates: ${candidateIdsToCheck.map(id => id.toString()).join(", ")}`);
+    
     const existingVotes = await Vote.find({
       voterRegNumber: normalizedRegNumber,
       candidateId: { $in: candidateIdsToCheck },
     });
+
+    // Log found votes for debugging
+    if (existingVotes.length > 0) {
+      console.log(`[Vote Check] Found ${existingVotes.length} existing vote(s) for regnumber: ${normalizedRegNumber}`);
+      existingVotes.forEach(vote => {
+        console.log(`[Vote Check] - Vote ID: ${vote._id}, RegNumber: ${vote.voterRegNumber}, CandidateID: ${vote.candidateId}`);
+      });
+    }
 
     if (existingVotes.length > 0) {
       const duplicateCandidateIds = existingVotes.map((v) => v.candidateId.toString());
@@ -526,6 +583,7 @@ export const castVote = asyncHandler(async (req: Request<unknown, unknown, CastV
         success: false,
         message: `You have already voted for the following candidate(s): ${duplicateCandidates.join(", ")}. Each voter can only vote once per candidate.`,
         duplicateCandidateIds,
+        voterRegNumber: normalizedRegNumber, // Include in response for debugging
       });
     }
   }
