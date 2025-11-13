@@ -239,32 +239,8 @@ export const processVotesAtomically = async ({
 
   if (isDemo) {
     const results: Array<{ position: string; status: string; message: string; voteCount?: number }> = [];
-    const duplicateCandidates: string[] = [];
     
-    // Check for duplicates first (by candidateId)
-    for (const candidate of candidateIds) {
-      demoVotes[normalizedRegNumber] = demoVotes[normalizedRegNumber] || {};
-      // Check if voter has already voted for this candidate
-      const existingCandidateId = Object.values(demoVotes[normalizedRegNumber]).find(
-        (votedCandidateId) => votedCandidateId === candidate._id
-      );
-      if (existingCandidateId) {
-        duplicateCandidates.push(candidate._id);
-      }
-    }
-
-    // If any duplicates found, reject all votes
-    if (duplicateCandidates.length > 0) {
-      return candidateIds.map((candidate) => ({
-        position: candidate.position,
-        status: "error",
-        message: duplicateCandidates.includes(candidate._id)
-          ? `You have already voted for "${candidate.name ?? candidate._id}" (demo mode). Each voter can only vote once per candidate.`
-          : `Cannot process vote: duplicate voting detected for candidate(s).`,
-      }));
-    }
-
-    // Process all votes if no duplicates
+    // Duplicate votes are now allowed - process all votes
     for (const candidate of candidateIds) {
       const position = candidate.position;
       // Store by candidateId instead of position
@@ -294,37 +270,11 @@ export const processVotesAtomically = async ({
   try {
     session.startTransaction();
 
-    // Pre-check for existing votes BEFORE processing any votes
-    // This ensures we fail fast if voter has already voted for any candidate
+    // Duplicate votes are now allowed - removed pre-check for existing votes
     const candidateIdsList = candidateIds.map((c) => new mongoose.Types.ObjectId(c._id));
     
-    // Log for debugging - ensure we're checking the correct regnumber
-    console.log(`[ProcessVotes] Checking votes for regnumber: ${normalizedRegNumber}, candidates: ${candidateIdsList.map(id => id.toString()).join(", ")}`);
-    
-    const existingVotes = await Vote.find({
-      voterRegNumber: normalizedRegNumber,
-      candidateId: { $in: candidateIdsList },
-    }).session(session);
-
-    // Log found votes for debugging
-    if (existingVotes.length > 0) {
-      console.log(`[ProcessVotes] Found ${existingVotes.length} existing vote(s) for regnumber: ${normalizedRegNumber}`);
-      existingVotes.forEach(vote => {
-        console.log(`[ProcessVotes] - Vote ID: ${vote._id}, RegNumber: ${vote.voterRegNumber}, CandidateID: ${vote.candidateId}`);
-      });
-    }
-
-    if (existingVotes.length > 0) {
-      const duplicateCandidateIds = existingVotes.map((v) => v.candidateId.toString());
-      await session.abortTransaction();
-      return candidateIds.map((candidate) => ({
-        position: candidate.position,
-        status: "error",
-        message: duplicateCandidateIds.includes(candidate._id)
-          ? `You have already voted for "${candidate.name ?? candidate._id}". Each voter can only vote once per candidate.`
-          : `Cannot process vote: you have already voted for one or more of these candidates.`,
-      }));
-    }
+    // Log for debugging
+    console.log(`[ProcessVotes] Processing votes for regnumber: ${normalizedRegNumber}, candidates: ${candidateIdsList.map(id => id.toString()).join(", ")}`);
 
     // Verify all candidates exist before creating votes
     const existingCandidates = await Candidate.find({
@@ -417,15 +367,8 @@ export const processVotesAtomically = async ({
     await session.abortTransaction();
     console.error("Atomic vote transaction failed:", error);
     
-    // Check if it's a duplicate key error (MongoDB unique constraint violation)
+    // Duplicate votes are now allowed, so we don't check for duplicate key errors
     const errorMessage = (error as Error).message;
-    if (errorMessage.includes("duplicate key") || errorMessage.includes("E11000")) {
-      return candidateIds.map((candidate) => ({
-        position: candidate.position,
-        status: "error",
-        message: `You have already voted for "${candidate.name ?? candidate._id}". Each voter can only vote once per candidate.`,
-      }));
-    }
 
     return candidateIds.map((candidate) => ({
       position: candidate.position,
@@ -554,39 +497,8 @@ export const castVote = asyncHandler(async (req: Request<unknown, unknown, CastV
     seenCandidateIds.add(candidate._id);
   }
 
-  // Pre-check for existing votes BEFORE processing (for non-demo votes)
-  if (!isDemo) {
-    const candidateIdsToCheck = preparedCandidateInputs.map((c) => new mongoose.Types.ObjectId(c._id));
-    
-    // Log for debugging - ensure we're checking the correct regnumber
-    console.log(`[Vote Check] Checking votes for regnumber: ${normalizedRegNumber}, candidates: ${candidateIdsToCheck.map(id => id.toString()).join(", ")}`);
-    
-    const existingVotes = await Vote.find({
-      voterRegNumber: normalizedRegNumber,
-      candidateId: { $in: candidateIdsToCheck },
-    });
-
-    // Log found votes for debugging
-    if (existingVotes.length > 0) {
-      console.log(`[Vote Check] Found ${existingVotes.length} existing vote(s) for regnumber: ${normalizedRegNumber}`);
-      existingVotes.forEach(vote => {
-        console.log(`[Vote Check] - Vote ID: ${vote._id}, RegNumber: ${vote.voterRegNumber}, CandidateID: ${vote.candidateId}`);
-      });
-    }
-
-    if (existingVotes.length > 0) {
-      const duplicateCandidateIds = existingVotes.map((v) => v.candidateId.toString());
-      const duplicateCandidates = preparedCandidateInputs
-        .filter((c) => duplicateCandidateIds.includes(c._id))
-        .map((c) => c.name ?? c._id);
-      return res.status(400).json({
-        success: false,
-        message: `You have already voted for the following candidate(s): ${duplicateCandidates.join(", ")}. Each voter can only vote once per candidate.`,
-        duplicateCandidateIds,
-        voterRegNumber: normalizedRegNumber, // Include in response for debugging
-      });
-    }
-  }
+  // Duplicate votes are now allowed - removed pre-check for existing votes
+  // Voters can vote multiple times for the same candidate
 
   const results = await processVotesAtomically({
     voterRegNumber: normalizedRegNumber,
