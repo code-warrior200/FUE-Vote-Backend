@@ -4,6 +4,7 @@ import type { Server as SocketIOServer } from "socket.io";
 import Candidate from "../models/Candidate";
 import Vote from "../models/Vote";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { voters } from "./adminController";
 
 type DemoVoteRecord = Record<string, Record<string, string>>;
 type DemoCandidateVotes = Record<string, number>;
@@ -422,14 +423,22 @@ export const castVote = asyncHandler(async (req: Request<unknown, unknown, CastV
   const voterRegNumber = req.user?.regnumber || req.body.voterRegNumber;
   const io = req.app.get("io") as SocketIOServer | undefined;
 
-  // Use isDemo from user token (set during login) as primary source, with body override
-  const isDemo = isDemoFromBody !== undefined ? isDemoFromBody : (req.user?.isDemo ?? false);
-
   if (!voterRegNumber || typeof voterRegNumber !== "string" || !voterRegNumber.trim()) {
     return res.status(400).json({ success: false, message: "Missing voter registration number" });
   }
 
   const normalizedRegNumber = voterRegNumber.trim().toUpperCase();
+
+  // Check if this voter is in the official voters list - if so, force real voting (store in MongoDB)
+  const officialVoters = voters.map((v) => v.regnumber.toUpperCase());
+  const isOfficialVoter = officialVoters.includes(normalizedRegNumber);
+  
+  // Use isDemo from user token (set during login) as primary source, with body override
+  // BUT: if voter is in official voters list, force isDemo to false to store votes in MongoDB
+  let isDemo = isDemoFromBody !== undefined ? isDemoFromBody : (req.user?.isDemo ?? false);
+  if (isOfficialVoter) {
+    isDemo = false; // Force official voters to vote as real voters (stored in MongoDB)
+  }
 
   let candidateInputs: CandidateVoteInput[] = [];
 
