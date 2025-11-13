@@ -241,12 +241,17 @@ export const processVotesAtomically = async ({
     const results: Array<{ position: string; status: string; message: string; voteCount?: number }> = [];
     
     // Duplicate votes are now allowed - process all votes
+    console.log(`[ProcessVotes] Processing ${candidateIds.length} demo vote(s) for regnumber: ${normalizedRegNumber}`);
     for (const candidate of candidateIds) {
       const position = candidate.position;
       // Store by candidateId instead of position
       demoVotes[normalizedRegNumber] = demoVotes[normalizedRegNumber] || {};
       demoVotes[normalizedRegNumber][candidate._id] = candidate._id;
-      demoCandidateVotes[candidate._id] = (demoCandidateVotes[candidate._id] || 0) + 1;
+      
+      // Increment vote count by 1 for this candidate
+      const previousCount = demoCandidateVotes[candidate._id] || 0;
+      demoCandidateVotes[candidate._id] = previousCount + 1;
+      console.log(`[ProcessVotes] Demo vote: Incremented vote count for candidate ${candidate._id} (${candidate.name ?? 'Unknown'}) from ${previousCount} to ${demoCandidateVotes[candidate._id]}`);
       
       // Emit vote event with updated vote count
       await emitVoteEvent(io, candidate, true, demoCandidateVotes[candidate._id]);
@@ -255,6 +260,7 @@ export const processVotesAtomically = async ({
         position,
         status: "success",
         message: `✅ Your vote for "${candidate.name ?? candidate._id}" as "${position}" has been recorded (demo mode).`,
+        voteCount: demoCandidateVotes[candidate._id],
       });
     }
     
@@ -315,25 +321,30 @@ export const processVotesAtomically = async ({
       }
     });
 
-    // Update vote counts for all candidates
-    const updatePromises = candidateIds.map((candidate) =>
-      Candidate.updateOne(
+    // Update vote counts for all candidates - increment by 1 for each vote
+    console.log(`[ProcessVotes] Incrementing vote counts for ${candidateIds.length} candidate(s)`);
+    const updatePromises = candidateIds.map((candidate) => {
+      console.log(`[ProcessVotes] Incrementing totalVotes by 1 for candidate: ${candidate._id} (${candidate.name ?? 'Unknown'})`);
+      return Candidate.updateOne(
         { _id: candidate._id },
         { $inc: { totalVotes: 1 } },
         { session }
-      )
-    );
+      );
+    });
 
     const updateResults = await Promise.all(updatePromises);
 
     // Verify all updates succeeded
     for (let i = 0; i < updateResults.length; i++) {
+      const candidate = candidateIds[i];
       if (updateResults[i].matchedCount === 0) {
-        throw new Error(`Failed to update vote count for candidate ${candidateIds[i]._id}`);
+        throw new Error(`Failed to update vote count for candidate ${candidate._id}`);
       }
       if (updateResults[i].modifiedCount === 0) {
         // This shouldn't happen, but log it for debugging
-        console.warn(`Warning: Vote count was not modified for candidate ${candidateIds[i]._id}`);
+        console.warn(`Warning: Vote count was not modified for candidate ${candidate._id} (${candidate.name ?? 'Unknown'})`);
+      } else {
+        console.log(`[ProcessVotes] ✓ Successfully incremented vote count for candidate: ${candidate._id} (${candidate.name ?? 'Unknown'})`);
       }
     }
 
